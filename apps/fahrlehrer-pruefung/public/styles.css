@@ -22,7 +22,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #0d1220;
     --surface: #151c2e;
     --surface-2: #1c2539;
@@ -42,6 +42,27 @@
     --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 4px 16px rgba(0, 0, 0, .25);
     color-scheme: dark;
   }
+}
+
+:root[data-theme="dark"] {
+  --bg: #0d1220;
+  --surface: #151c2e;
+  --surface-2: #1c2539;
+  --text: #e7ebf4;
+  --muted: #9aa5bd;
+  --border: #2a3550;
+  --primary: #7aa2ff;
+  --primary-soft: #1f2d52;
+  --on-primary: #0d1220;
+  --good: #4ade80;
+  --good-soft: #143222;
+  --warn: #fbbf24;
+  --warn-soft: #3a2c0e;
+  --bad: #f87171;
+  --bad-soft: #3d1a1a;
+  --track: #26304a;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 4px 16px rgba(0, 0, 0, .25);
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -73,7 +94,7 @@ a { color: var(--primary); }
   justify-content: space-around;
   background: var(--surface);
   border-top: 1px solid var(--border);
-  padding: 4px 4px calc(4px + env(safe-area-inset-bottom));
+  padding: 4px max(4px, env(safe-area-inset-right, 0px)) calc(4px + env(safe-area-inset-bottom, 0px)) max(4px, env(safe-area-inset-left, 0px));
 }
 
 .nav .brand, .nav .nav-settings { display: none; }
@@ -107,7 +128,9 @@ a { color: var(--primary); }
 .main {
   max-width: 1080px;
   margin: 0 auto;
-  padding: 20px 16px 96px;
+  padding-block: 20px calc(96px + env(safe-area-inset-bottom, 0px));
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
   outline: none;
 }
 
@@ -118,7 +141,7 @@ a { color: var(--primary); }
     flex-direction: column;
     justify-content: flex-start;
     gap: 4px;
-    padding: 20px 14px;
+    padding: calc(20px + env(safe-area-inset-top, 0px)) 14px calc(20px + env(safe-area-inset-bottom, 0px)) max(14px, env(safe-area-inset-left, 0px));
     border-top: 0;
     border-right: 1px solid var(--border);
   }
@@ -138,7 +161,7 @@ a { color: var(--primary); }
     padding: 10px 12px;
     font-size: .95rem;
   }
-  .main { margin-left: var(--nav-w); padding: 32px 40px 48px; }
+  .main { margin-left: var(--nav-w); padding-block: 32px 48px; padding-left: 40px; padding-right: max(40px, env(safe-area-inset-right, 0px)); }
   .layout .main { max-width: calc(1080px + var(--nav-w)); }
 }
 
@@ -296,7 +319,7 @@ details.disclosure[open] summary { border-bottom: 1px solid var(--border); margi
 .toast {
   position: fixed;
   left: 50%;
-  bottom: 90px;
+  bottom: calc(90px + env(safe-area-inset-bottom, 0px));
   transform: translateX(-50%);
   background: var(--text);
   color: var(--bg);

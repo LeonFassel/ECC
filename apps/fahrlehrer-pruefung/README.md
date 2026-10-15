@@ -31,10 +31,25 @@ node apps/fahrlehrer-pruefung/server.js
 ```
 
 Der Fortschritt bleibt im `localStorage` des Browsers gespeichert. Unter
-*Einstellungen* können Sie ihn exportieren und importieren.
+*Einstellungen* können Sie ihn als Sicherungscode exportieren und importieren.
 
 Für Smartphone oder Tablet im selben Netzwerk starten Sie den Server mit
 `HOST=0.0.0.0`.
+
+## Als einzelne Datei (z. B. für QR-Code oder Hosting)
+
+```bash
+node apps/fahrlehrer-pruefung/build-standalone.js fahrlehrer-pruefungstrainer.html
+```
+
+Das erzeugt eine einzige HTML-Datei, die ohne Server läuft. Sie können sie auf
+einen beliebigen statischen Webspace laden, z. B. GitHub Pages, und die Adresse
+als QR-Code teilen. In dieser Variante sind die KI-Funktionen aus. Mit
+`--fragment` entsteht eine Variante ohne `<html>`/`<head>`/`<body>` für Hoster,
+die das Grundgerüst selbst ergänzen.
+
+Den Fortschritt übertragen Sie zwischen Geräten über *Einstellungen →
+Sicherungscode anzeigen* und *Sicherungscode einfügen*.
 
 ## KI-Bewertung und KI-Prüfer aktivieren
 
@@ -68,6 +83,7 @@ in der Grundversion.
 ```text
 apps/fahrlehrer-pruefung/
   server.js                 Statischer Server + KI-Endpunkte
+  build-standalone.js       Baut die App als eine einzige HTML-Datei
   lib/ai-examiner.js        Claude-Requests (Bewertung, Prüfer), Antwortprüfung
   public/index.html         App-Hülle mit Navigation
   public/app.js             Oberfläche (Views, Übung, Prüfung, Analyse)

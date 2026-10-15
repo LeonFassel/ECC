@@ -14,6 +14,9 @@
   let practice = null;
   let exam = null;
   let lastRoute = '';
+  let currentHash = window.location.hash;
+  let pendingConfirm = null;
+  let backupCode = null;
 
   // ------------------------------------------------------------------ Speicher
 
@@ -116,14 +119,23 @@
   // ------------------------------------------------------------------ Routing
 
   function route() {
-    const hash = window.location.hash.replace(/^#\/?/, '');
+    const hash = currentHash.replace(/^#\/?/, '');
     const [name, param] = hash.split('/');
     return { name: name || 'dashboard', param: param ? decodeURIComponent(param) : null };
   }
 
+  // Die Route wird im Speicher gehalten und nur zusätzlich in die Adresszeile
+  // geschrieben – so funktioniert die App auch eingebettet (z. B. als gehostete Seite).
   function go(hash) {
-    if (window.location.hash === hash) render();
-    else window.location.hash = hash;
+    if (hash !== currentHash) {
+      currentHash = hash;
+      try {
+        window.history.pushState(null, '', hash);
+      } catch (_err) {
+        // Adresszeile nicht beschreibbar – Navigation läuft trotzdem.
+      }
+    }
+    render();
   }
 
   function render() {
@@ -147,6 +159,7 @@
       analyse: renderAnalysis,
       einstellungen: renderSettings
     };
+    pendingConfirm = null;
     app.innerHTML = (views[r.name] || renderDashboard)();
     if (key !== lastRoute) {
       window.scrollTo(0, 0);
@@ -516,7 +529,7 @@
         <textarea id="exam-answer" data-input="exam-answer" placeholder="Antworten Sie so, wie Sie es in der Prüfung sagen würden …" ${exam.loading ? 'disabled' : ''}>${esc(exam.draft)}</textarea>
         <div class="btn-row">
           <button class="btn primary" data-action="exam-send" ${exam.loading ? 'disabled' : ''}>Antwort abgeben</button>
-          <button class="btn" data-action="exam-abort">Prüfung beenden</button>
+          <button class="btn" data-action="exam-abort" ${exam.results.length ? 'data-confirm="Jetzt beenden und auswerten? Nochmal tippen"' : ''}>Prüfung beenden</button>
         </div>
       </div>`;
   }
@@ -767,40 +780,60 @@
         <h2>Daten</h2>
         <p class="small muted">Ihr Fortschritt wird nur lokal in diesem Browser gespeichert. Sichern Sie ihn, um ihn auf ein anderes Gerät zu übertragen.</p>
         <div class="btn-row">
-          <button class="btn" data-action="export">Fortschritt exportieren</button>
-          <label class="btn" for="import-file">Fortschritt importieren</label>
-          <input id="import-file" type="file" accept="application/json" hidden data-input="import">
-          <button class="btn bad" data-action="reset">Fortschritt zurücksetzen</button>
+          <button class="btn" data-action="export">Sicherungscode anzeigen</button>
+          <label class="btn" for="import-file">Sicherungsdatei laden</label>
+          <input id="import-file" type="file" accept="application/json,text/plain" hidden data-input="import">
+          <button class="btn bad" data-action="reset" data-confirm="Wirklich alles löschen? Nochmal tippen">Fortschritt zurücksetzen</button>
         </div>
+        ${backupCode !== null ? `
+          <label for="backup-code" class="small muted" style="display:block;margin-top:14px">Sicherungscode – kopieren und auf dem anderen Gerät unten einfügen</label>
+          <textarea id="backup-code" readonly style="min-height:110px;font-family:ui-monospace,monospace;font-size:.8rem">${esc(backupCode)}</textarea>
+          <div class="btn-row"><button class="btn primary" data-action="copy-backup">Code kopieren</button></div>` : ''}
+        <label for="restore-code" class="small muted" style="display:block;margin-top:14px">Sicherungscode einfügen</label>
+        <textarea id="restore-code" data-input="restore" style="min-height:80px" placeholder="Code von einem anderen Gerät hier einfügen …"></textarea>
+        <div class="btn-row"><button class="btn" data-action="restore">Sicherung übernehmen</button></div>
       </div>
       <p class="small muted" style="margin-top:16px">Inhalte ohne Gewähr – bitte stets mit den aktuellen Fassungen von StVO, StVG, FeV, FahrlG, FahrlPrüfV und FahrschAusbO abgleichen.</p>
     `;
   }
 
-  function exportData() {
-    const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `fahrlehrer-fortschritt-${Core.dateKey(now())}.json`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  function showBackup() {
+    backupCode = JSON.stringify(state);
+    render();
+    const field = document.getElementById('backup-code');
+    if (field) field.focus();
+  }
+
+  function copyBackup() {
+    const field = document.getElementById('backup-code');
+    const select = () => {
+      if (field) field.select();
+      toast('Code markiert – jetzt kopieren.');
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(backupCode).then(() => toast('Sicherungscode kopiert.'), select);
+    } else {
+      select();
+    }
+  }
+
+  function restoreFromText(text) {
+    try {
+      const parsed = JSON.parse(String(text).trim());
+      if (!parsed || typeof parsed !== 'object' || !parsed.attempts) throw new Error('invalid');
+      state = Core.migrateState(parsed);
+      saveState();
+      backupCode = null;
+      toast('Fortschritt übernommen.');
+      render();
+    } catch (_err) {
+      toast('Der Code ist ungültig. Bitte vollständig kopieren und erneut einfügen.');
+    }
   }
 
   function importData(file) {
     const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        state = Core.migrateState(JSON.parse(String(reader.result)));
-        saveState();
-        toast('Fortschritt importiert.');
-        render();
-      } catch (_err) {
-        toast('Datei konnte nicht gelesen werden.');
-      }
-    };
+    reader.onload = () => restoreFromText(reader.result);
     reader.readAsText(file);
   }
 
@@ -838,28 +871,49 @@
     'exam-send': sendExamAnswer,
     'exam-retry': () => aiExamTurn(),
     'exam-abort': () => {
-      if (exam.results.length === 0 || window.confirm('Prüfung jetzt beenden und auswerten?')) {
-        if (exam.results.length === 0) exam = null;
-        else exam.finished = true;
-        render();
-      }
+      if (exam.results.length === 0) exam = null;
+      else exam.finished = true;
+      render();
     },
     'exam-new': () => {
       exam = null;
       render();
     },
-    export: exportData,
-    reset: () => {
-      if (window.confirm('Wirklich den gesamten Lernfortschritt löschen?')) {
-        state = Core.createState();
-        saveState();
-        practice = null;
-        exam = null;
-        toast('Fortschritt zurückgesetzt.');
-        render();
+    export: showBackup,
+    'copy-backup': copyBackup,
+    restore: () => {
+      const field = document.getElementById('restore-code');
+      if (!field || !field.value.trim()) {
+        toast('Bitte zuerst einen Sicherungscode einfügen.');
+        return;
       }
+      restoreFromText(field.value);
+    },
+    reset: () => {
+      state = Core.createState();
+      saveState();
+      practice = null;
+      exam = null;
+      backupCode = null;
+      toast('Fortschritt zurückgesetzt.');
+      render();
     }
   };
+
+  // Zweistufige Bestätigung direkt im Button (Browser-Dialoge sind nicht überall erlaubt).
+  function needsConfirmation(el) {
+    if (!el.dataset.confirm || pendingConfirm === el) return false;
+    pendingConfirm = el;
+    el.dataset.label = el.textContent;
+    el.textContent = el.dataset.confirm;
+    setTimeout(() => {
+      if (pendingConfirm === el) {
+        pendingConfirm = null;
+        el.textContent = el.dataset.label;
+      }
+    }, 4000);
+    return true;
+  }
 
   app.addEventListener('click', event => {
     const el = event.target.closest('[data-action]');
@@ -867,8 +921,17 @@
     const handler = actions[el.dataset.action];
     if (handler) {
       event.preventDefault();
+      if (needsConfirmation(el)) return;
+      pendingConfirm = null;
       handler(el);
     }
+  });
+
+  document.addEventListener('click', event => {
+    const link = event.target.closest('a[href^="#"]');
+    if (!link || event.defaultPrevented || event.ctrlKey || event.metaKey) return;
+    event.preventDefault();
+    go(link.getAttribute('href'));
   });
 
   app.addEventListener('input', event => {
@@ -896,7 +959,12 @@
     if (event.target.dataset.input === 'exam-answer' && !exam.loading) sendExamAnswer();
   });
 
-  window.addEventListener('hashchange', render);
+  const syncFromLocation = () => {
+    currentHash = window.location.hash;
+    render();
+  };
+  window.addEventListener('hashchange', syncFromLocation);
+  window.addEventListener('popstate', syncFromLocation);
   window.addEventListener('storage', event => {
     if (event.key === STORAGE_KEY) {
       state = loadState();
