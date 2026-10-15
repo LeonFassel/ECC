@@ -498,7 +498,7 @@
     const withSigns = !(options && options.excludeSigns);
     const picked = [];
     for (const subject of shuffle(data.subjects, rand)) {
-      const pool = data.questions.filter(q => q.subject === subject.id && (withSigns || !q.sign));
+      const pool = data.questions.filter(q => q.subject === subject.id && (withSigns || !q.signLabel));
       const ranked = shuffle(pool, rand).sort((a, b) => {
         const ma = questionMastery(state.attempts[a.id], ts);
         const mb = questionMastery(state.attempts[b.id], ts);

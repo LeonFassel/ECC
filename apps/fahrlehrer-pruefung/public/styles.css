@@ -307,7 +307,8 @@ textarea { min-height: 150px; resize: vertical; }
   background: var(--sign-bg);
   border: 1px solid var(--border);
 }
-.sign-stage svg { width: min(220px, 60vw); height: auto; display: block; }
+.sign-stage { gap: 12px; flex-wrap: wrap; }
+.sign-stage img { height: min(180px, 42vw); width: auto; max-width: 100%; object-fit: contain; display: block; }
 .sign-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 10px; }
 .sign-tile {
   display: flex;
@@ -323,17 +324,17 @@ textarea { min-height: 150px; resize: vertical; }
   font-size: .8rem;
   font-weight: 700;
 }
-.sign-tile svg { width: 64px; height: 64px; }
+.sign-tile img { width: 64px; height: 64px; object-fit: contain; }
 .sign-tile.sicher { border-color: var(--good); }
 .sign-tile.mittel { border-color: var(--warn); }
 .sign-tile.schwach { border-color: var(--bad); }
 .sign-teaser { display: grid; grid-template-columns: auto 1fr; gap: 18px; align-items: center; }
 .sign-strip { display: grid; grid-template-columns: repeat(3, 52px); gap: 6px; padding: 10px; border-radius: 12px; background: var(--sign-bg); }
-.sign-strip svg { width: 52px; height: 52px; display: block; }
+.sign-strip img { width: 52px; height: 52px; object-fit: contain; display: block; }
 @media (max-width: 520px) {
   .sign-teaser { grid-template-columns: 1fr; }
   .sign-strip { grid-template-columns: repeat(6, 1fr); }
-  .sign-strip svg { width: 100%; height: auto; }
+  .sign-strip img { width: 100%; height: auto; aspect-ratio: 1; }
 }
 
 .btn.mic .nav-icon { width: 20px; height: 20px; }

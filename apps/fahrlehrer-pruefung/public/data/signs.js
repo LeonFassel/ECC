@@ -1,9 +1,9 @@
 /**
- * Verkehrszeichen-Training: Zeichen sehen, Bedeutung mündlich erklären.
- *
- * Grundlage der Bedeutungen sind die Erläuterungen sowie Ge- und Verbote der
- * StVO-Anlagen 1 bis 3. Jedes Zeichen enthält zusätzlich typische Fehler
+ * Ergänzungen zu ausgewählten Verkehrszeichen: Erklärung in einfacher Sprache,
+ * Praxisbeispiel, ausführliche Musterantwort, Kernpunkte und typische Fehler
  * (wrongClaims), damit die Bewertung auch falsche Aussagen erkennt.
+ *
+ * Bild, Bezeichnung und amtlicher Text kommen aus signs-stvo.js (StVO Anlage 1–4).
  */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) {
@@ -495,7 +495,7 @@
       category: 'Richtzeichen (Vorrangzeichen)',
       explanation: 'Die gelbe Raute heißt: Ich bin auf einer Vorfahrtstraße und habe an allen folgenden Kreuzungen Vorfahrt, bis das wieder aufgehoben wird.',
       example: 'Auf der Vorfahrtstraße bremst der Schüler an jeder Einmündung. Erklären Sie: zügig fahren, aber bremsbereit bleiben.',
-      modelAnswer: 'Zeichen 306 „Vorfahrtstraße“ zeigt an, dass Vorfahrt besteht bis zum nächsten Zeichen 205, 206 oder 307 „Ende der Vorfahrtstraße“. Außerhalb geschlossener Ortschaften darf auf der Fahrbahn von Vorfahrtstraßen nicht geparkt werden. Mit dem Zusatzzeichen „abknickende Vorfahrt“ muss ich, wenn ich dem Verlauf folge, rechtzeitig blinken und besonders auf Fußgänger achten. Das Zeichen wird innerorts an jeder Kreuzung wiederholt.',
+      modelAnswer: 'Zeichen 306 „Vorfahrtstraße“ zeigt an, dass Vorfahrt besteht bis zum nächsten Zeichen 205, 206 oder 307 „Ende der Vorfahrtstraße“. Außerhalb geschlossener Ortschaften darf auf der Fahrbahn von Vorfahrtstraßen nicht geparkt werden. Mit dem Zusatzzeichen „abknickende Vorfahrt“ muss ich, wenn ich dem Verlauf folge, rechtzeitig blinken und besonders auf Fußgänger achten. ',
       keyPoints: [
         { label: 'Name: Vorfahrtstraße', keywords: ['vorfahrtstraße', 'vorfahrtsstraße', '306'] },
         { label: 'Vorfahrt bis 205/206/307', keywords: ['205', '206', '307', 'bis zum', 'aufgehoben'] },
@@ -665,26 +665,6 @@
       ],
       wrongClaims: [],
       followUps: ['Was sind Verkehrseinrichtungen?', 'Wie verhalten Sie sich vor einer Kurve mit Richtungstafel?']
-    }),
-    sign(720, {
-      name: 'Grünpfeil',
-      category: 'Zusatz zur Lichtzeichenanlage (§ 37 StVO)',
-      difficulty: 2,
-      explanation: 'Das Blechschild mit grünem Pfeil an der Ampel erlaubt bei Rot das Rechtsabbiegen – aber erst nach vollständigem Anhalten und ohne andere zu behindern.',
-      example: 'Klassischer Prüfungsfehler: Abbiegen mit Grünpfeil ohne Anhalten. Üben Sie: Halt an der Haltlinie, schauen, dann vorsichtig abbiegen.',
-      modelAnswer: 'Das ist der Grünpfeil (Zeichen 720), ein Schild mit grünem Pfeil auf schwarzem Grund rechts neben dem roten Licht. Er erlaubt nach § 37 StVO das Rechtsabbiegen bei Rot – aber erst nach vollständigem Anhalten an der Haltlinie. Ich darf nur abbiegen, wenn eine Behinderung oder Gefährdung anderer, besonders von Fußgängern und Radfahrern der freigegebenen Verkehrsrichtung, ausgeschlossen ist. Ein Grünpfeil im Lichtzeichen (grüner Leuchtpfeil) ist dagegen eine eigene Freigabe ohne Anhaltepflicht.',
-      keyPoints: [
-        { label: 'Name: Grünpfeil', keywords: ['grünpfeil', 'grüner pfeil', '720'] },
-        { label: 'Rechtsabbiegen bei Rot erlaubt', keywords: ['rechts abbiegen', 'rechtsabbiegen', 'bei rot'] },
-        { label: 'Vorher vollständig anhalten', keywords: ['anhalten', 'stillstand', 'halten'] },
-        { label: 'Niemanden gefährden/behindern', keywords: ['gefährd', 'behinder', 'fußgänger', 'radfahrer'] },
-        { label: 'Unterschied zum grünen Leuchtpfeil', keywords: ['leuchtpfeil', 'ampel', 'lichtzeichen'] }
-      ],
-      wrongClaims: [
-        { label: 'Falsch: Mit Grünpfeilschild muss man vorher anhalten', keywords: ['ohne anhalten', 'ohne zu halten', 'durchfahren'] },
-        { label: 'Falsch: Der Grünpfeil gibt keine Vorfahrt', keywords: ['habe vorfahrt', 'hat vorfahrt'] }
-      ],
-      followUps: ['Erklären Sie den Unterschied zwischen „Grünpfeil“ und „grüner Pfeil“ in der Ampel.', 'Gilt der Grünpfeil auch für Radfahrer auf dem Radweg?']
     })
   ];
 

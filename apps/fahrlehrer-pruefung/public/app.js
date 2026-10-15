@@ -273,8 +273,38 @@
       <p class="small muted mic-status" ${dictation && !dictation.stopping ? '' : 'hidden'}>Sprechen Sie jetzt – der Text erscheint im Feld. Mit „${submitLabel}“ wird die Aufnahme beendet und ausgewertet.</p>`;
   }
 
+  function isSignCard(q) {
+    return Boolean(q && Array.isArray(q.imageSrc) && q.imageSrc.length > 0);
+  }
+
+  // Originalabbildungen aus der StVO; der Alt-Text verrät die Bedeutung bewusst nicht.
+  function signImages(q, alt) {
+    return q.imageSrc.map(src => `<img src="${esc(src)}" alt="${esc(alt)}" loading="lazy" decoding="async">`).join('');
+  }
+
   function signStage(q) {
-    return q && q.svg ? `<div class="sign-stage">${q.svg}</div>` : '';
+    return isSignCard(q) ? `<div class="sign-stage">${signImages(q, 'Abbildung des Verkehrszeichens')}</div>` : '';
+  }
+
+  const SIGN_GROUPS = [
+    { id: 'gefahr', label: 'Gefahrzeichen', match: c => c.startsWith('Gefahrzeichen') },
+    { id: 'vorschrift', label: 'Vorschriftzeichen', match: c => c.startsWith('Vorschriftzeichen') },
+    { id: 'richt', label: 'Richtzeichen', match: c => c.startsWith('Richtzeichen') || c.startsWith('Sinnbild') },
+    { id: 'zusatz', label: 'Zusatzzeichen', match: c => c.startsWith('Zusatzzeichen') },
+    { id: 'einrichtung', label: 'Verkehrseinrichtungen', match: c => c.startsWith('Verkehrseinrichtung') }
+  ];
+
+  function signGroup(q) {
+    return SIGN_GROUPS.find(group => group.match(q.category || '')) || null;
+  }
+
+  const OFFICIAL_LABELS = { gebot: 'Ge- oder Verbot', erlaeuterung: 'Erläuterung', allgemein: 'Allgemein' };
+
+  function renderOfficialText(q) {
+    if (!Array.isArray(q.official) || q.official.length === 0) return '';
+    return `<details class="disclosure" open><summary>Amtlicher Text (StVO, Anlage ${esc(q.anlage)})</summary>
+      ${q.official.map(part => `<p><strong class="small">${esc(OFFICIAL_LABELS[part.type] || '')}:</strong> ${esc(part.text)}</p>`).join('')}
+    </details>`;
   }
 
   // ------------------------------------------------------------------ Routing
@@ -392,9 +422,9 @@
       </div>
 
       <div class="card section sign-teaser">
-        <div class="sign-strip" aria-hidden="true">${['206', '205', '306', '274', '325.1', '720'].map(n => {
+        <div class="sign-strip" aria-hidden="true">${['206', '205', '306', '274', '325.1', '101'].map(n => {
           const item = signs.find(x => x.sign === n);
-          return item ? `<span>${item.svg}</span>` : '';
+          return item ? `<span>${signImages(item, '')}</span>` : '';
         }).join('')}</div>
         <div>
           <h2>Verkehrszeichen-Training</h2>
@@ -492,19 +522,32 @@
           </div>
         </div>
       </div>
-      ${id === 'zeichen' ? `<div class="section-title"><h2>Alle Zeichen</h2><span class="small muted">Tippen zum Üben</span></div>
-      <div class="sign-grid">${signs.map(item => {
-        const level = Core.masteryLevel(Core.questionMastery(state.attempts[item.id], ts));
-        return `<a href="#/frage/${esc(item.id)}" class="sign-tile ${level.id}" title="Zeichen ${esc(item.sign)}">${item.svg}<span>${esc(item.sign)}</span></a>`;
-      }).join('')}</div>` : ''}
+      ${id === 'zeichen' ? renderSignCatalog(ts) : ''}
       <div class="section-title"><h2>Fragen</h2></div>
       <div class="card">
-        <ul class="list">${list.filter(q => !q.sign).map(q => {
+        <ul class="list">${list.filter(q => !isSignCard(q)).map(q => {
           const mastery = Core.questionMastery(state.attempts[q.id], ts);
           return `<li><div><a href="#/frage/${esc(q.id)}">${esc(q.topic)}</a><div class="small muted">${esc(q.question)}</div></div>${levelChip(mastery)}</li>`;
         }).join('')}</ul>
       </div>
     `;
+  }
+
+  function renderSignCatalog(ts) {
+    const groups = SIGN_GROUPS.map(group => ({ group, items: signs.filter(item => signGroup(item) === group) }))
+      .filter(entry => entry.items.length > 0);
+    return `<div class="section-title"><h2>Zeichen-Training nach Gruppe</h2></div>
+      <div class="card"><div class="btn-row">
+        <button class="btn primary" data-action="practice-signs">Gemischt (${signs.length})</button>
+        ${groups.map(({ group, items }) => `<button class="btn" data-action="practice-signs" data-group="${esc(group.id)}">${esc(group.label)} (${items.length})</button>`).join('')}
+      </div></div>
+      ${groups.map(({ group, items }) => `
+      <div class="section-title"><h2>${esc(group.label)}</h2><span class="small muted">${items.length} Zeichen · Tippen zum Üben</span></div>
+      <div class="sign-grid">${items.map(item => {
+        const level = Core.masteryLevel(Core.questionMastery(state.attempts[item.id], ts));
+        const label = item.sign ? item.sign : (item.kind || 'Zeichen');
+        return `<a href="#/frage/${esc(item.id)}" class="sign-tile ${level.id}" title="${esc(item.signLabel || label)}">${signImages(item, '')}<span>${esc(label)}</span></a>`;
+      }).join('')}</div>`).join('')}`;
   }
 
   // ------------------------------------------------------------------ Üben
@@ -537,7 +580,7 @@
     const q = questionById.get(practice.queue[practice.index]);
     const reviewing = practice.phase !== 'answer';
     // Bei Verkehrszeichen bleibt der Name verborgen, bis die Antwort abgegeben ist.
-    const topicChip = q.sign && !reviewing ? '' : `<span class="chip">${esc(q.topic)}</span>`;
+    const topicChip = isSignCard(q) && !reviewing ? '' : `<span class="chip">${esc(q.topic)}</span>`;
     const head = `
       <div class="progress-meta"><span>${esc(practice.title)}</span><span>Frage ${practice.index + 1} von ${practice.queue.length}</span></div>
       ${bar(practice.index / practice.queue.length, 'thin')}
@@ -556,12 +599,13 @@
     }
 
     return `${head}
-        ${q.sign ? `<div class="panel info"><h3>Zeichen ${esc(q.sign)} – ${esc(q.name)}</h3><p class="small muted">${esc(q.category || '')}</p></div>` : ''}
+        ${q.signLabel ? `<div class="panel info"><h3>${esc(q.signLabel)} – ${esc(q.name)}</h3><p class="small muted">${esc(q.category || '')}</p></div>` : ''}
         ${practice.answer ? `<details class="disclosure"><summary>Ihre Antwort</summary><p style="white-space:pre-wrap">${esc(practice.answer)}</p></details>` : ''}
         ${renderAutoEvaluation(practice.auto)}
         ${renderAiEvaluation()}
-        <div class="panel info"><h3>Einfach erklärt</h3><p>${esc(q.explanation)}</p></div>
-        <div class="panel"><h3>Praxisbeispiel</h3><p>${esc(q.example)}</p></div>
+        ${renderOfficialText(q)}
+        ${q.explanation ? `<div class="panel info"><h3>Einfach erklärt</h3><p>${esc(q.explanation)}</p></div>` : ''}
+        ${q.example ? `<div class="panel"><h3>Praxisbeispiel</h3><p>${esc(q.example)}</p></div>` : ''}
         <details class="disclosure" open><summary>Musterantwort</summary><p>${esc(q.modelAnswer)}</p>
           <p class="small muted">Kernpunkte: ${q.keyPoints.map(p => esc(p.label)).join(' · ')}</p>
           ${q.source ? `<p class="small muted">Quelle der Frage: ${esc(q.source)}</p>` : ''}</details>
@@ -1064,14 +1108,16 @@
       startPractice(ids, el.dataset.topic);
     },
     'practice-ids': el => startPractice(el.dataset.ids.split(','), 'Wiederholung'),
-    'practice-signs': () => {
+    'practice-signs': el => {
       const ts = now();
-      const ordered = signs.slice().sort((a, b) => {
+      const group = SIGN_GROUPS.find(g => g.id === el.dataset.group) || null;
+      const pool = group ? signs.filter(item => signGroup(item) === group) : signs;
+      const ordered = pool.slice().sort((a, b) => {
         const ma = Core.questionMastery(state.attempts[a.id], ts);
         const mb = Core.questionMastery(state.attempts[b.id], ts);
         return (ma === null ? 0.4 : ma) - (mb === null ? 0.4 : mb) || Math.random() - 0.5;
       });
-      startPractice(ordered.slice(0, 10).map(item => item.id), 'Verkehrszeichen-Training');
+      startPractice(ordered.slice(0, 10).map(item => item.id), group ? `Zeichen-Training – ${group.label}` : 'Verkehrszeichen-Training');
     },
     mic: el => {
       if (dictation && dictation.target === el.dataset.target && !dictation.stopping) stopDictation();

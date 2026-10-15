@@ -18,12 +18,13 @@
       require('./questions-muendlich.js'),
       require('./questions-technik.js'),
       require('./signs.js'),
-      require('./sign-graphics.js')
+      require('./signs-stvo.js'),
+      require('./sign-images.js')
     );
   } else {
-    root.FLData = factory(root.FLQuestionsMuendlich, root.FLQuestionsTechnik, root.FLSigns, root.FLSignGraphics);
+    root.FLData = factory(root.FLQuestionsMuendlich, root.FLQuestionsTechnik, root.FLSigns, root.FLSignsStvo, root.FLSignImages);
   }
-})(typeof self !== 'undefined' ? self : this, function (muendlich, technik, signData, signGraphics) {
+})(typeof self !== 'undefined' ? self : this, function (muendlich, technik, signExtras, stvo, signImages) {
   'use strict';
 
   const subjects = [
@@ -954,13 +955,29 @@
     }
   ];
 
-  const graphics = (signGraphics && signGraphics.graphics) || {};
-  const signs = ((signData && signData.signs) || []).map(item => Object.assign({}, item, { svg: graphics[item.sign] || '' }));
+  // Verkehrszeichen: Bild, Bezeichnung und amtlicher Text aus der StVO (signs-stvo.js),
+  // ergänzt um handgeschriebene Erklärungen und typische Fehler (signs.js).
+  const EXTRA_FIELDS = ['explanation', 'example', 'modelAnswer', 'keyPoints', 'wrongClaims', 'followUps', 'difficulty'];
+  const extras = new Map(((signExtras && signExtras.signs) || []).map(item => [item.id, item]));
+  const imageMap = (signImages && signImages.images) || {};
+  const allSigns = ((stvo && stvo.signs) || []).map(item => {
+    const extra = extras.get(item.id);
+    const merged = Object.assign({ explanation: '', example: '' }, item);
+    if (extra) EXTRA_FIELDS.forEach(field => { if (extra[field] !== undefined) merged[field] = extra[field]; });
+    merged.imageSrc = (item.images || []).map(key => imageMap[key]).filter(Boolean);
+    // Ohne Abbildung im Original (z. B. Parkflächenmarkierung) wird die Karte als Textfrage gestellt.
+    if (merged.imageSrc.length === 0) {
+      merged.question = `Was regelt die StVO zur ${merged.kind || 'Zeichen'} „${merged.name}“? Erklären Sie Bedeutung, Ge- oder Verbote und wie Sie sich verhalten.`;
+    }
+    return merged;
+  });
+  // Für das Bild-Training zählen nur Karten mit Original-Abbildung.
+  const signs = allSigns.filter(item => item.imageSrc.length > 0);
 
   const all = questions
     .concat((muendlich && muendlich.questions) || [])
     .concat((technik && technik.questions) || [])
-    .concat(signs);
+    .concat(allSigns);
 
   return { subjects, questions: all, signs };
 });

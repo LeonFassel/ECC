@@ -10,7 +10,7 @@ braucht es kein Framework, keinen Build-Schritt und keine externen Abhängigkeit
 | --- | --- |
 | Übersicht | Lernfortschritt, Wissensstand und Prüfungsreife getrennt, Tagesziel, Lernserie, Fortschrittsbalken pro Fach |
 | Fächer | Verkehrszeichen, Pädagogik, Recht, Technik, Verkehrsverhalten, Berufspraxis – insgesamt 171 Fragen, darunter 38 mündliche Prüfungsfragen (Verkehrsverhalten/Recht) und gut 40 Technikfragen |
-| Verkehrszeichen-Training | 36 Zeichen als Grafik: Zeichen sehen, Antwort einsprechen oder tippen, Rückmeldung zu „richtig erwähnt“, „falsch“ und „hat gefehlt“ |
+| Verkehrszeichen-Training | Alle 217 Zeichen aus StVO Anlage 1 bis 4 (216 mit Originalabbildung, nach Gruppen trainierbar): Zeichen sehen, Antwort einsprechen oder tippen, Rückmeldung zu „richtig erwähnt“, „falsch“ und „hat gefehlt“ |
 | Üben | Frage erst frei beantworten (tippen oder einsprechen), danach Schnellbewertung, Erklärung in einfacher Sprache, Praxisbeispiel, Musterantwort und mögliche Nachfragen |
 | Heute | Tagesplan aus fälligen Wiederholungen (Leitner-System), Schwächen und neuen Themen |
 | Prüfung | Simulation der mündlichen Prüfung mit Nachfragen, wahlweise mit Trainings-Prüfer (offline) oder KI-Prüfer |
@@ -110,9 +110,15 @@ apps/fahrlehrer-pruefung/
   public/data/questions.js      Fächer, Grundfragen und Zusammenführung aller Fragen
   public/data/questions-muendlich.js  Mündliche Prüfungsfragen Verkehrsverhalten/Recht
   public/data/questions-technik.js    Technikfragen
-  public/data/signs.js          Verkehrszeichen: Bedeutung, Kernpunkte, typische Fehler
-  public/data/sign-graphics.js  Verkehrszeichen als Vektorgrafiken
+  public/data/signs-stvo.js     Alle Verkehrszeichen der StVO: Bezeichnung, amtlicher Text, Kernpunkte (generiert)
+  public/data/sign-images.js    Originalabbildungen der Verkehrszeichen aus der StVO (generiert)
+  public/data/signs.js          Ergänzungen zu wichtigen Zeichen: Erklärung, Beispiel, typische Fehler
+  tools/extract-stvo-signs.py   Erzeugt signs-stvo.js und sign-images.js aus dem StVO-PDF
 ```
+
+Die Verkehrszeichen werden nicht nachgezeichnet: Bilder und Texte stammen
+unverändert aus dem PDF der StVO (Anlagen 1 bis 4). Neu erzeugen mit
+`python3 tools/extract-stvo-signs.py <StVO.pdf>` (benötigt PyMuPDF und Pillow).
 
 Weitere Fragen ergänzen Sie in `public/data/questions.js`. Jede Frage braucht
 Erklärung, Praxisbeispiel, Musterantwort, Kernpunkte mit Schlüsselwörtern und

@@ -48,11 +48,13 @@ function runTests() {
     for (const item of data.questions) {
       assert.ok(!seen.has(item.id), `duplicate id ${item.id}`);
       seen.add(item.id);
-      for (const field of ['question', 'explanation', 'example', 'modelAnswer']) {
+      // StVO-Zeichenkarten bringen den amtlichen Text mit; Erklärung und Beispiel sind dort optional.
+      const fields = item.signLabel ? ['question', 'modelAnswer'] : ['question', 'explanation', 'example', 'modelAnswer'];
+      for (const field of fields) {
         assert.ok(typeof item[field] === 'string' && item[field].length > 10, `${item.id}.${field}`);
       }
       assert.ok(item.topic && item.topic.length >= 3, `${item.id}.topic`);
-      assert.ok(item.keyPoints.length >= 3, `${item.id} keyPoints`);
+      assert.ok(item.keyPoints.length >= (item.signLabel ? 1 : 3), `${item.id} keyPoints`);
       assert.ok(item.followUps.length >= 1, `${item.id} followUps`);
       assert.ok([1, 2, 3].includes(item.difficulty), `${item.id} difficulty`);
       for (const p of item.keyPoints) {
@@ -68,12 +70,23 @@ function runTests() {
     }
   }));
 
-  results.push(test('every sign has a graphic and no model answer triggers its own wrong claims', () => {
-    assert.ok(data.signs.length >= 30, 'expected at least 30 signs');
+  results.push(test('every sign has an original image and no model answer triggers its own wrong claims', () => {
+    assert.ok(data.signs.length >= 216, `expected all StVO signs, got ${data.signs.length}`);
     for (const item of data.signs) {
-      assert.ok(item.svg.startsWith('<svg'), `${item.id} has no graphic`);
-      assert.ok(item.name && item.sign, `${item.id} name/sign`);
+      assert.ok(item.imageSrc.length > 0, `${item.id} has no image`);
+      for (const src of item.imageSrc) assert.ok(src.startsWith('data:image/webp;base64,'), `${item.id} image format`);
+      assert.ok(item.name && item.signLabel, `${item.id} name/label`);
+      assert.ok(Array.isArray(item.official), `${item.id} official text`);
     }
+    for (const id of ['vz-101', 'vz-206', 'vz-205', 'vz-274', 'vz-306', 'vz-325-1', 'vz-z2-2-1']) {
+      assert.ok(data.signs.some(item => item.id === id), `${id} missing`);
+    }
+    const stvo = require('../../../apps/fahrlehrer-pruefung/public/data/signs-stvo.js');
+    const curated = require('../../../apps/fahrlehrer-pruefung/public/data/signs.js');
+    const stvoIds = new Set(stvo.signs.map(item => item.id));
+    for (const item of curated.signs) assert.ok(stvoIds.has(item.id), `curated ${item.id} has no StVO card`);
+    const ids = data.questions.map(item => item.id);
+    assert.strictEqual(new Set(ids).size, ids.length, 'question ids are unique');
     for (const item of data.questions) {
       const ev = Core.evaluateAnswer(item, item.modelAnswer);
       assert.deepStrictEqual(ev.wrong, [], `${item.id} model answer flagged as wrong: ${ev.wrong.join(', ')}`);

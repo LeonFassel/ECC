@@ -51,7 +51,8 @@
     const lines = [
       `Frage-ID: ${q.id}`,
       `Thema: ${q.topic}`,
-      q.sign ? `Verkehrszeichen: Zeichen ${q.sign} „${q.name}“ (der Prüfling sieht nur die Grafik)` : null,
+      q.signLabel ? `Verkehrszeichen: ${q.signLabel} „${q.name}“${q.imageSrc && q.imageSrc.length ? ' (der Prüfling sieht nur die Originalabbildung)' : ''}` : null,
+      q.official && q.official.length ? `Amtlicher Text (StVO): ${q.official.map(part => part.text).join(' ')}` : null,
       `Frage: ${q.question}`,
       `Musterantwort: ${q.modelAnswer}`,
       `Kernpunkte: ${q.keyPoints.map(p => p.label).join('; ')}`,

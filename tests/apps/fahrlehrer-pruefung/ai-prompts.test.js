@@ -30,7 +30,8 @@ function runTests() {
   results.push(test('sign briefs tell the examiner the sign but hide it from the candidate', () => {
     const brief = Prompts.questionBrief(sign);
     assert.ok(brief.includes('Zeichen 206'));
-    assert.ok(brief.includes('sieht nur die Grafik'));
+    assert.ok(brief.includes('Amtlicher Text (StVO)'));
+    assert.ok(brief.includes('sieht nur die Originalabbildung'));
     assert.ok(brief.includes('Typische Fehler'));
   }));
 
