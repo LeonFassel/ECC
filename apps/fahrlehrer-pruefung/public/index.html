@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="description" content="Lern-App für die mündliche Fahrlehrerprüfung: Fragen, Musterantworten, Prüfungssimulation und Schwächenanalyse.">
+  <meta name="theme-color" content="#1d4ed8">
+  <title>Fahrlehrer-Prüfungstrainer</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="layout">
+    <nav class="nav" aria-label="Hauptnavigation">
+      <div class="brand">
+        <img src="icon.svg" alt="" width="32" height="32">
+        <span>Prüfungstrainer</span>
+      </div>
+      <a href="#/" data-nav="dashboard"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h7v9H3zM14 3h7v5h-7zM14 12h7v9h-7zM3 16h7v5H3z"/></svg><span>Übersicht</span></a>
+      <a href="#/heute" data-nav="heute"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg><span>Heute</span></a>
+      <a href="#/faecher" data-nav="faecher"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M4 12h16M4 19h16"/></svg><span>Fächer</span></a>
+      <a href="#/pruefung" data-nav="pruefung"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg><span>Prüfung</span></a>
+      <a href="#/analyse" data-nav="analyse"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span>Analyse</span></a>
+      <a href="#/einstellungen" data-nav="einstellungen" class="nav-settings"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg><span>Einstellungen</span></a>
+    </nav>
+    <main id="app" class="main" tabindex="-1" aria-live="polite"></main>
+  </div>
+  <script src="data/questions.js"></script>
+  <script src="core/learning-core.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
