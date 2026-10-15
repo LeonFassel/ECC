@@ -14,11 +14,16 @@
  */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) {
-    module.exports = factory();
+    module.exports = factory(
+      require('./questions-muendlich.js'),
+      require('./questions-technik.js'),
+      require('./signs.js'),
+      require('./sign-graphics.js')
+    );
   } else {
-    root.FLData = factory();
+    root.FLData = factory(root.FLQuestionsMuendlich, root.FLQuestionsTechnik, root.FLSigns, root.FLSignGraphics);
   }
-})(typeof self !== 'undefined' ? self : this, function () {
+})(typeof self !== 'undefined' ? self : this, function (muendlich, technik, signData, signGraphics) {
   'use strict';
 
   const subjects = [
@@ -949,5 +954,13 @@
     }
   ];
 
-  return { subjects, questions };
+  const graphics = (signGraphics && signGraphics.graphics) || {};
+  const signs = ((signData && signData.signs) || []).map(item => Object.assign({}, item, { svg: graphics[item.sign] || '' }));
+
+  const all = questions
+    .concat((muendlich && muendlich.questions) || [])
+    .concat((technik && technik.questions) || [])
+    .concat(signs);
+
+  return { subjects, questions: all, signs };
 });

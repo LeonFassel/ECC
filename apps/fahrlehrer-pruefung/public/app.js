@@ -3,14 +3,16 @@
   'use strict';
 
   const Core = window.FLCore;
-  const { subjects, questions } = window.FLData;
+  const Prompts = window.FLPrompts;
+  const { subjects, questions, signs } = window.FLData;
   const STORAGE_KEY = 'fl-pruefung-state-v1';
   const questionById = new Map(questions.map(q => [q.id, q]));
   const subjectById = new Map(subjects.map(s => [s.id, s]));
   const app = document.getElementById('app');
 
   let state = loadState();
-  let aiStatus = { ai: false, model: null };
+  let aiStatus = { ai: false, mode: null, model: null };
+  let sampleFn = null;
   let practice = null;
   let exam = null;
   let lastRoute = '';
@@ -106,14 +108,173 @@
     return json;
   }
 
+  // ------------------------------------------------------------------ KI-Anbindung
+  // Zwei Wege: der eigene Server (Claude API mit Schlüssel) oder – als gehostete
+  // Seite auf claude.ai – Claude über das Konto der Person, die die Seite öffnet.
+
   async function checkAi() {
     try {
       const res = await fetch('api/status', { cache: 'no-store' });
-      if (res.ok) aiStatus = await res.json();
+      if (res.ok) {
+        const status = await res.json();
+        if (status.ai) aiStatus = { ai: true, mode: 'server', model: status.model };
+      }
     } catch (_err) {
-      aiStatus = { ai: false, model: null };
+      // Kein Server erreichbar – Grundversion oder gehostete Seite.
+    }
+    if (!aiStatus.ai && window.claude && typeof window.claude.use === 'function') {
+      try {
+        sampleFn = await window.claude.use('sample');
+        if (sampleFn) aiStatus = { ai: true, mode: 'sample', model: null };
+      } catch (_err) {
+        sampleFn = null;
+      }
     }
     render();
+  }
+
+  function sampleErrorMessage(err) {
+    const code = err && err.code;
+    if (['not_granted', 'sampling_disabled', 'not_declared', 'capability_disabled', 'capability_removed'].includes(code)) {
+      aiStatus = { ai: false, mode: null, model: null, declined: true };
+      return 'Die KI wurde für diese Seite nicht freigegeben. Die Schnellbewertung funktioniert weiterhin.';
+    }
+    if (code === 'rate_limited') return 'Gerade zu viele KI-Anfragen. Bitte in einem Moment erneut versuchen.';
+    if (code === 'session_expired') return 'Bitte melden Sie sich erneut bei Claude an, um die KI zu nutzen.';
+    if (code === 'invalid_json' || code === 'empty_completion') return 'Die KI-Antwort war unvollständig. Bitte erneut versuchen.';
+    if (code === 'refused') return 'Die KI hat diese Anfrage abgelehnt. Formulieren Sie die Antwort bitte anders.';
+    return 'Die KI ist gerade nicht erreichbar. Bitte erneut versuchen.';
+  }
+
+  async function aiEvaluate(question, answer) {
+    if (aiStatus.mode === 'server') return postJson('api/evaluate', { questionId: question.id, answer });
+    try {
+      return Prompts.normalizeEvaluation(await sampleFn.json(Prompts.evaluationPrompt(question, answer)));
+    } catch (err) {
+      throw new Error(sampleErrorMessage(err));
+    }
+  }
+
+  async function aiExamine(ids, history) {
+    if (aiStatus.mode === 'server') return postJson('api/examiner', { questionIds: ids, history });
+    const list = ids.map(id => questionById.get(id)).filter(Boolean);
+    const lead = `${Prompts.EXAMINER_SYSTEM}\n\n${Prompts.EXAMINER_FORMAT}\n\n${Prompts.examinerPlan(list)}`;
+    try {
+      return Prompts.normalizeExaminerTurn(await sampleFn.json(Prompts.examinerMessages(list, history, lead), { cache: false }));
+    } catch (err) {
+      throw new Error(sampleErrorMessage(err));
+    }
+  }
+
+  // ------------------------------------------------------------------ Spracheingabe
+
+  const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+  let dictation = null;
+
+  const MIC_ERRORS = {
+    'not-allowed': 'Kein Zugriff aufs Mikrofon. Tippen Sie stattdessen auf das Mikrofon Ihrer Handy-Tastatur, um zu diktieren.',
+    'service-not-allowed': 'Spracheingabe ist hier nicht erlaubt. Nutzen Sie das Mikrofon Ihrer Handy-Tastatur.',
+    'audio-capture': 'Kein Mikrofon gefunden.',
+    'no-speech': 'Nichts gehört – bitte noch einmal versuchen.',
+    network: 'Die Spracherkennung braucht eine Internetverbindung.'
+  };
+
+  function draftOf(target) {
+    if (target === 'exam') return exam ? exam.draft : '';
+    return practice ? practice.answer : '';
+  }
+
+  function setDraft(target, text) {
+    if (target === 'exam' && exam) exam.draft = text;
+    if (target === 'practice' && practice) practice.answer = text;
+    const el = document.getElementById(target === 'exam' ? 'exam-answer' : 'answer');
+    if (el) el.value = text;
+  }
+
+  function micButton(target) {
+    const active = Boolean(dictation && dictation.target === target && !dictation.stopping);
+    return `<button type="button" class="btn mic ${active ? 'recording' : ''}" data-action="mic" data-target="${target}" aria-pressed="${active}">
+      <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+      <span>${active ? 'Aufnahme beenden' : 'Antwort einsprechen'}</span></button>`;
+  }
+
+  function refreshMicButtons() {
+    document.querySelectorAll('[data-action="mic"]').forEach(btn => {
+      btn.outerHTML = micButton(btn.dataset.target);
+    });
+    const hint = document.querySelector('.mic-status');
+    if (hint) hint.hidden = !(dictation && !dictation.stopping);
+  }
+
+  function startDictation(target) {
+    if (!SpeechRec) {
+      toast('Spracheingabe wird in diesem Browser nicht unterstützt. Tippen Sie auf das Mikrofon Ihrer Tastatur, um zu diktieren.');
+      const el = document.getElementById(target === 'exam' ? 'exam-answer' : 'answer');
+      if (el) el.focus();
+      return;
+    }
+    stopDictation();
+    const recognition = new SpeechRec();
+    recognition.lang = 'de-DE';
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    const session = { target, recognition, base: draftOf(target).trim(), finalText: '', stopping: false, then: null };
+    dictation = session;
+
+    recognition.onresult = event => {
+      let interim = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const result = event.results[i];
+        if (result.isFinal) session.finalText += `${result[0].transcript} `;
+        else interim += result[0].transcript;
+      }
+      setDraft(target, [session.base, session.finalText.trim(), interim.trim()].filter(Boolean).join(' '));
+    };
+    recognition.onerror = event => {
+      if (MIC_ERRORS[event.error]) toast(MIC_ERRORS[event.error]);
+    };
+    recognition.onend = () => {
+      if (dictation === session) dictation = null;
+      refreshMicButtons();
+      if (session.then) session.then();
+    };
+    try {
+      recognition.start();
+    } catch (_err) {
+      dictation = null;
+      toast(MIC_ERRORS['not-allowed']);
+    }
+    refreshMicButtons();
+  }
+
+  /** Beendet die Aufnahme; erkannte Wörter werden noch übernommen, dann folgt optional `then`. */
+  function stopDictation(then) {
+    if (!dictation) {
+      if (then) then();
+      return;
+    }
+    dictation.stopping = true;
+    dictation.then = then || null;
+    try {
+      dictation.recognition.stop();
+    } catch (_err) {
+      const session = dictation;
+      dictation = null;
+      if (session.then) session.then();
+    }
+    refreshMicButtons();
+  }
+
+  function answerTools(target, submitAction, submitLabel) {
+    return `<div class="btn-row">
+        ${micButton(target)}
+        <button class="btn primary" data-action="${submitAction}">${submitLabel}</button>
+      </div>
+      <p class="small muted mic-status" ${dictation && !dictation.stopping ? '' : 'hidden'}>Sprechen Sie jetzt – der Text erscheint im Feld. Mit „${submitLabel}“ wird die Aufnahme beendet und ausgewertet.</p>`;
+  }
+
+  function signStage(q) {
+    return q && q.svg ? `<div class="sign-stage">${q.svg}</div>` : '';
   }
 
   // ------------------------------------------------------------------ Routing
@@ -160,6 +321,7 @@
       einstellungen: renderSettings
     };
     pendingConfirm = null;
+    if (key !== lastRoute && dictation) stopDictation();
     app.innerHTML = (views[r.name] || renderDashboard)();
     if (key !== lastRoute) {
       window.scrollTo(0, 0);
@@ -226,6 +388,18 @@
           <button class="btn primary" data-action="start-daily">Tagesplan starten</button>
           <a class="btn" href="#/pruefung">Prüfung simulieren</a>
           <a class="btn" href="#/analyse">Schwächen ansehen</a>
+        </div>
+      </div>
+
+      <div class="card section sign-teaser">
+        <div class="sign-strip" aria-hidden="true">${['206', '205', '306', '274', '325.1', '720'].map(n => {
+          const item = signs.find(x => x.sign === n);
+          return item ? `<span>${item.svg}</span>` : '';
+        }).join('')}</div>
+        <div>
+          <h2>Verkehrszeichen-Training</h2>
+          <p class="muted">${signs.length} Zeichen als Bild: Sehen, mündlich erklären, Rückmeldung erhalten, was richtig und was falsch war.</p>
+          <div class="btn-row"><button class="btn primary" data-action="practice-signs">Zeichen-Training starten</button></div>
         </div>
       </div>
 
@@ -312,14 +486,20 @@
           <h2>Üben</h2>
           <p class="muted small">Beantworten Sie die Fragen zuerst frei – danach sehen Sie Bewertung, Erklärung und Musterantwort.</p>
           <div class="btn-row">
-            <button class="btn primary" data-action="practice-subject" data-subject="${esc(id)}">Alle Fragen üben</button>
+            ${id === 'zeichen' ? '<button class="btn primary" data-action="practice-signs">Zeichen-Training mit Bildern</button>' : ''}
+            <button class="btn ${id === 'zeichen' ? '' : 'primary'}" data-action="practice-subject" data-subject="${esc(id)}">Alle Fragen üben</button>
             <button class="btn" data-action="practice-subject-weak" data-subject="${esc(id)}" ${stat.levels.schwach + stat.levels.mittel === 0 ? 'disabled' : ''}>Nur Schwächen</button>
           </div>
         </div>
       </div>
+      ${id === 'zeichen' ? `<div class="section-title"><h2>Alle Zeichen</h2><span class="small muted">Tippen zum Üben</span></div>
+      <div class="sign-grid">${signs.map(item => {
+        const level = Core.masteryLevel(Core.questionMastery(state.attempts[item.id], ts));
+        return `<a href="#/frage/${esc(item.id)}" class="sign-tile ${level.id}" title="Zeichen ${esc(item.sign)}">${item.svg}<span>${esc(item.sign)}</span></a>`;
+      }).join('')}</div>` : ''}
       <div class="section-title"><h2>Fragen</h2></div>
       <div class="card">
-        <ul class="list">${list.map(q => {
+        <ul class="list">${list.filter(q => !q.sign).map(q => {
           const mastery = Core.questionMastery(state.attempts[q.id], ts);
           return `<li><div><a href="#/frage/${esc(q.id)}">${esc(q.topic)}</a><div class="small muted">${esc(q.question)}</div></div>${levelChip(mastery)}</li>`;
         }).join('')}</ul>
@@ -355,32 +535,36 @@
     if (practice.index >= practice.queue.length) return renderPracticeSummary();
 
     const q = questionById.get(practice.queue[practice.index]);
+    const reviewing = practice.phase !== 'answer';
+    // Bei Verkehrszeichen bleibt der Name verborgen, bis die Antwort abgegeben ist.
+    const topicChip = q.sign && !reviewing ? '' : `<span class="chip">${esc(q.topic)}</span>`;
     const head = `
       <div class="progress-meta"><span>${esc(practice.title)}</span><span>Frage ${practice.index + 1} von ${practice.queue.length}</span></div>
       ${bar(practice.index / practice.queue.length, 'thin')}
       <div class="card section">
-        <div style="display:flex;gap:8px;flex-wrap:wrap">${subjectChip(q.subject)}<span class="chip">${esc(q.topic)}</span><span class="chip">Schwierigkeit ${'●'.repeat(q.difficulty)}${'○'.repeat(3 - q.difficulty)}</span></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">${subjectChip(q.subject)}${topicChip}<span class="chip">Schwierigkeit ${'●'.repeat(q.difficulty)}${'○'.repeat(3 - q.difficulty)}</span></div>
+        ${signStage(q)}
         <p class="question-text">${esc(q.question)}</p>`;
 
-    if (practice.phase === 'answer') {
+    if (!reviewing) {
       return `${head}
-        <label for="answer" class="kpi-label">Ihre Antwort (frei formulieren, wie in der mündlichen Prüfung)</label>
+        <label for="answer" class="kpi-label">Ihre Antwort – tippen oder einsprechen</label>
         <textarea id="answer" data-input="answer" placeholder="Formulieren Sie Ihre Antwort in ganzen Sätzen …">${esc(practice.answer)}</textarea>
-        <div class="btn-row">
-          <button class="btn primary" data-action="submit-answer">Antwort prüfen</button>
-          <button class="btn" data-action="reveal">Weiß ich nicht – Lösung zeigen</button>
-        </div>
+        ${answerTools('practice', 'submit-answer', 'Antwort prüfen')}
+        <div class="btn-row" style="margin-top:6px"><button class="btn" data-action="reveal">Weiß ich nicht – Lösung zeigen</button></div>
       </div>`;
     }
 
     return `${head}
+        ${q.sign ? `<div class="panel info"><h3>Zeichen ${esc(q.sign)} – ${esc(q.name)}</h3><p class="small muted">${esc(q.category || '')}</p></div>` : ''}
         ${practice.answer ? `<details class="disclosure"><summary>Ihre Antwort</summary><p style="white-space:pre-wrap">${esc(practice.answer)}</p></details>` : ''}
         ${renderAutoEvaluation(practice.auto)}
         ${renderAiEvaluation()}
         <div class="panel info"><h3>Einfach erklärt</h3><p>${esc(q.explanation)}</p></div>
         <div class="panel"><h3>Praxisbeispiel</h3><p>${esc(q.example)}</p></div>
         <details class="disclosure" open><summary>Musterantwort</summary><p>${esc(q.modelAnswer)}</p>
-          <p class="small muted">Kernpunkte: ${q.keyPoints.map(p => esc(p.label)).join(' · ')}</p></details>
+          <p class="small muted">Kernpunkte: ${q.keyPoints.map(p => esc(p.label)).join(' · ')}</p>
+          ${q.source ? `<p class="small muted">Quelle der Frage: ${esc(q.source)}</p>` : ''}</details>
         <details class="disclosure"><summary>Mögliche Nachfragen des Prüfers</summary><ul>${q.followUps.map(f => `<li>${esc(f)}</li>`).join('')}</ul></details>
         <h3 style="margin-top:18px">Wie gut wussten Sie es?</h3>
         <div class="btn-row">
@@ -394,13 +578,13 @@
   function renderAutoEvaluation(auto) {
     if (!auto) return '';
     const cls = tone(auto.score);
+    const wrong = auto.wrong || [];
     return `<div class="panel ${cls}">
-      <h3>Schnellbewertung: ${pct(auto.score)} der Kernpunkte</h3>
+      <h3>Schnellbewertung: ${pct(auto.score)}</h3>
       <p>${esc(auto.feedback)}</p>
-      <ul class="points">
-        ${auto.covered.map(l => `<li><span class="ok" aria-label="genannt">✓</span>${esc(l)}</li>`).join('')}
-        ${auto.missing.map(l => `<li><span class="no" aria-label="fehlt">✗</span>${esc(l)}</li>`).join('')}
-      </ul>
+      ${auto.covered.length ? `<p class="points-title">Richtig erwähnt</p><ul class="points">${auto.covered.map(l => `<li><span class="ok" aria-hidden="true">✓</span>${esc(l)}</li>`).join('')}</ul>` : ''}
+      ${wrong.length ? `<p class="points-title">Das war falsch</p><ul class="points">${wrong.map(l => `<li class="wrong"><span class="no" aria-hidden="true">!</span>${esc(l)}</li>`).join('')}</ul>` : ''}
+      ${auto.missing.length ? `<p class="points-title">Hat gefehlt</p><ul class="points">${auto.missing.map(l => `<li><span class="miss" aria-hidden="true">–</span>${esc(l)}</li>`).join('')}</ul>` : ''}
       <p class="small muted" style="margin-top:8px">Automatischer Abgleich mit Schlüsselbegriffen – gleichwertige Formulierungen werden evtl. nicht erkannt.</p>
     </div>`;
   }
@@ -408,7 +592,8 @@
   function renderAiEvaluation() {
     if (!aiStatus.ai || !practice.answer) return '';
     if (practice.aiLoading) {
-      return '<div class="panel"><h3 style="display:flex;gap:8px;align-items:center"><span class="spinner"></span>KI-Prüfer bewertet Ihre Antwort …</h3></div>';
+      return `<div class="panel"><h3 style="display:flex;gap:8px;align-items:center"><span class="spinner"></span>KI-Prüfer bewertet Ihre Antwort …</h3>
+        ${aiStatus.mode === 'sample' ? '<p class="small muted">Beim ersten Mal fragt Claude, ob diese Seite die KI nutzen darf.</p>' : ''}</div>`;
     }
     if (practice.aiError) {
       return `<div class="panel bad"><h3>KI-Bewertung nicht möglich</h3><p>${esc(practice.aiError)}</p>
@@ -421,8 +606,9 @@
     return `<div class="panel ${tone(ai.score)}">
       <h3>KI-Bewertung: ${pct(ai.score)}</h3>
       <p>${esc(ai.feedback)}</p>
-      ${ai.errors.length ? `<p><strong>Fachliche Fehler:</strong></p><ul>${ai.errors.map(e => `<li>${esc(e)}</li>`).join('')}</ul>` : ''}
-      ${ai.missing.length ? `<p><strong>Es fehlt noch:</strong> ${ai.missing.map(esc).join(', ')}</p>` : ''}
+      ${ai.covered && ai.covered.length ? `<p class="points-title">Richtig</p><ul class="points">${ai.covered.map(e => `<li><span class="ok" aria-hidden="true">✓</span>${esc(e)}</li>`).join('')}</ul>` : ''}
+      ${ai.errors.length ? `<p class="points-title">Falsch</p><ul class="points">${ai.errors.map(e => `<li class="wrong"><span class="no" aria-hidden="true">!</span>${esc(e)}</li>`).join('')}</ul>` : ''}
+      ${ai.missing.length ? `<p class="points-title">Hat gefehlt</p><ul class="points">${ai.missing.map(e => `<li><span class="miss" aria-hidden="true">–</span>${esc(e)}</li>`).join('')}</ul>` : ''}
       ${ai.tip ? `<p><strong>Lerntipp:</strong> ${esc(ai.tip)}</p>` : ''}
     </div>`;
   }
@@ -456,7 +642,7 @@
     current.aiError = null;
     render();
     try {
-      current.ai = await postJson('api/evaluate', { questionId: q.id, answer: current.answer });
+      current.ai = await aiEvaluate(q, current.answer);
     } catch (err) {
       current.aiError = err.message;
     } finally {
@@ -525,13 +711,20 @@
           ${exam.loading ? '<div class="bubble examiner"><span class="spinner" aria-label="Prüfer denkt nach"></span></div>' : ''}
         </div>
         ${exam.error ? `<div class="panel bad"><p>${esc(exam.error)}</p><button class="btn" data-action="exam-retry">Erneut versuchen</button></div>` : ''}
-        <label for="exam-answer" class="kpi-label">Ihre Antwort</label>
+        ${signStage(currentExamQuestion())}
+        <label for="exam-answer" class="kpi-label">Ihre Antwort – tippen oder einsprechen</label>
         <textarea id="exam-answer" data-input="exam-answer" placeholder="Antworten Sie so, wie Sie es in der Prüfung sagen würden …" ${exam.loading ? 'disabled' : ''}>${esc(exam.draft)}</textarea>
-        <div class="btn-row">
-          <button class="btn primary" data-action="exam-send" ${exam.loading ? 'disabled' : ''}>Antwort abgeben</button>
+        ${answerTools('exam', 'exam-send', 'Antwort abgeben')}
+        <div class="btn-row" style="margin-top:6px">
           <button class="btn" data-action="exam-abort" ${exam.results.length ? 'data-confirm="Jetzt beenden und auswerten? Nochmal tippen"' : ''}>Prüfung beenden</button>
         </div>
       </div>`;
+  }
+
+  function currentExamQuestion() {
+    if (!exam || exam.loading || exam.transcript.length === 0) return null;
+    const index = exam.mode === 'local' ? exam.index : exam.results.length;
+    return questionById.get(exam.ids[Math.min(index, exam.ids.length - 1)]);
   }
 
   function renderExamIntro() {
@@ -547,7 +740,7 @@
         <label class="option"><input type="radio" name="exam-mode" value="ai" ${aiStatus.ai ? 'checked' : 'disabled'}>
           <span><strong>KI-Prüfer</strong><br><span class="small muted">${aiStatus.ai
             ? 'Realistisches Prüfungsgespräch mit individuellen Nachfragen und ausführlicher Auswertung.'
-            : 'Nicht verfügbar – der Server läuft ohne KI-Zugang (siehe Einstellungen).'}</span></span></label>
+            : 'Nicht verfügbar – siehe Einstellungen.'}</span></span></label>
         <h2 style="margin-top:18px">Anzahl Fragen</h2>
         <select id="exam-count" aria-label="Anzahl Fragen">
           <option value="3">3 Fragen (Kurztest, ca. 10 Min.)</option>
@@ -647,7 +840,7 @@
     current.error = null;
     render();
     try {
-      const reply = await postJson('api/examiner', { questionIds: current.ids, history: current.transcript });
+      const reply = await aiExamine(current.ids, current.transcript);
       if (reply.assessment) {
         const qid = current.ids.includes(reply.assessment.questionId)
           ? reply.assessment.questionId
@@ -766,10 +959,18 @@
       <div class="card">
         <h2>KI-Funktionen</h2>
         ${aiStatus.ai
-          ? `<div class="panel good"><p><strong>Aktiv.</strong> Antworten werden zusätzlich von der KI bewertet, und der KI-Prüfer steht zur Verfügung.</p></div>`
+          ? `<div class="panel good"><p><strong>Aktiv${aiStatus.mode === 'sample' ? ' über Ihr Claude-Konto' : ''}.</strong> Antworten werden zusätzlich von der KI bewertet, und der KI-Prüfer steht zur Verfügung.</p></div>`
           : `<div class="panel warn"><p><strong>Nicht aktiv.</strong> Die App läuft in der Grundversion mit lokaler Bewertung.
-              Starten Sie den Server mit einem <code>ANTHROPIC_API_KEY</code>, um KI-Bewertung und KI-Prüfer zu nutzen (siehe README).</p></div>`}
-        <p class="small muted">Für die KI-Bewertung werden Ihre Antworttexte an den Server und von dort an die Claude API übermittelt.</p>
+              ${aiStatus.declined ? 'Die KI wurde für diese Seite nicht freigegeben; beim nächsten Öffnen fragt Claude erneut.' : 'Öffnen Sie die App über claude.ai oder starten Sie den Server mit einem <code>ANTHROPIC_API_KEY</code> (siehe README).'}</p></div>`}
+        <p class="small muted">${aiStatus.mode === 'sample'
+          ? 'Für die KI-Bewertung werden Ihre Antworttexte an Claude gesendet und zählen zu Ihrer Claude-Nutzung.'
+          : 'Für die KI-Bewertung werden Ihre Antworttexte an den Server und von dort an die Claude API übermittelt.'}</p>
+      </div>
+      <div class="card">
+        <h2>Spracheingabe</h2>
+        <p class="small muted">${SpeechRec
+          ? 'Mit „Antwort einsprechen“ diktieren Sie Ihre Antwort. Die Spracherkennung übernimmt Ihr Browser; je nach Browser wird die Aufnahme dafür an dessen Spracherkennungsdienst übertragen. Klappt der Zugriff aufs Mikrofon nicht, nutzen Sie die Mikrofon-Taste Ihrer Handy-Tastatur.'
+          : 'Dieser Browser bietet keine eingebaute Spracherkennung. Nutzen Sie die Mikrofon-Taste Ihrer Handy-Tastatur, um Antworten zu diktieren.'}</p>
       </div>
       <div class="card">
         <h2>Tagesziel</h2>
@@ -863,12 +1064,25 @@
       startPractice(ids, el.dataset.topic);
     },
     'practice-ids': el => startPractice(el.dataset.ids.split(','), 'Wiederholung'),
-    'submit-answer': () => submitAnswer(false),
+    'practice-signs': () => {
+      const ts = now();
+      const ordered = signs.slice().sort((a, b) => {
+        const ma = Core.questionMastery(state.attempts[a.id], ts);
+        const mb = Core.questionMastery(state.attempts[b.id], ts);
+        return (ma === null ? 0.4 : ma) - (mb === null ? 0.4 : mb) || Math.random() - 0.5;
+      });
+      startPractice(ordered.slice(0, 10).map(item => item.id), 'Verkehrszeichen-Training');
+    },
+    mic: el => {
+      if (dictation && dictation.target === el.dataset.target && !dictation.stopping) stopDictation();
+      else startDictation(el.dataset.target);
+    },
+    'submit-answer': () => stopDictation(() => submitAnswer(false)),
     reveal: () => submitAnswer(true),
     'ai-evaluate': () => requestAiEvaluation(),
     rate: el => rate(Number(el.dataset.score)),
     'exam-start': startExam,
-    'exam-send': sendExamAnswer,
+    'exam-send': () => stopDictation(sendExamAnswer),
     'exam-retry': () => aiExamTurn(),
     'exam-abort': () => {
       if (exam.results.length === 0) exam = null;
@@ -955,8 +1169,8 @@
   app.addEventListener('keydown', event => {
     // Strg/Cmd + Enter sendet die Antwort ab.
     if (event.key !== 'Enter' || !(event.ctrlKey || event.metaKey)) return;
-    if (event.target.dataset.input === 'answer') submitAnswer(false);
-    if (event.target.dataset.input === 'exam-answer' && !exam.loading) sendExamAnswer();
+    if (event.target.dataset.input === 'answer') stopDictation(() => submitAnswer(false));
+    if (event.target.dataset.input === 'exam-answer' && !exam.loading) stopDictation(sendExamAnswer);
   });
 
   const syncFromLocation = () => {

@@ -15,7 +15,16 @@ const fs = require('fs');
 const path = require('path');
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
-const SCRIPTS = ['data/questions.js', 'core/learning-core.js', 'app.js'];
+const SCRIPTS = [
+  'data/questions-muendlich.js',
+  'data/questions-technik.js',
+  'data/signs.js',
+  'data/sign-graphics.js',
+  'data/questions.js',
+  'core/learning-core.js',
+  'core/ai-prompts.js',
+  'app.js'
+];
 const TITLE = 'Fahrlehrer-Prüfungstrainer';
 
 function read(relative) {

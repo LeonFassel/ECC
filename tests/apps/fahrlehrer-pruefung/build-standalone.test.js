@@ -28,8 +28,10 @@ function runTests() {
     const html = build();
     assert.ok(html.startsWith('<!doctype html>'));
     assert.ok(html.includes('<title>Fahrlehrer-Prüfungstrainer</title>'));
-    assert.ok(html.includes('root.FLData = factory()'));
+    assert.ok(html.includes('root.FLData = factory('));
     assert.ok(html.includes('root.FLCore = factory()'));
+    assert.ok(html.includes('root.FLPrompts = factory()'));
+    assert.ok(html.includes('root.FLSigns = factory()'));
     assert.ok(html.includes('id="app"'));
     assert.ok(!/<script src=/.test(html), 'no external script references');
     assert.ok(!html.includes('href="styles.css"'), 'stylesheet inlined');
@@ -47,7 +49,7 @@ function runTests() {
   results.push(test('inlined scripts cannot close their script tag early', () => {
     const html = build();
     const scriptBodies = html.split('<script>').slice(1).map(part => part.split('</script>')[0]);
-    assert.strictEqual(scriptBodies.length, 3);
+    assert.strictEqual(scriptBodies.length, 8);
   }));
 
   const passed = results.filter(Boolean).length;

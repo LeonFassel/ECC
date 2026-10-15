@@ -76,35 +76,77 @@
 
   // ------------------------------------------------------------------ Bewertung
 
+  function escapeRegex(text) {
+    return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  /**
+   * Sucht ein Schlüsselwort in der (normalisierten) Antwort.
+   * Zahlen und kurze Kürzel („BE“, „50“) zählen nur als ganzes Wort,
+   * längere Begriffe auch als Wortteil („schmier“ findet „Schmierung“).
+   */
+  function findKeyword(answer, keyword) {
+    const k = normalize(keyword);
+    if (!k) return -1;
+    if (!/[a-z0-9]/.test(k)) return answer.indexOf(k);
+    const startsDigit = /^[0-9]/.test(k);
+    const endsDigit = /[0-9]$/.test(k);
+    if (!startsDigit && !endsDigit && k.length > 3) return answer.indexOf(k);
+    const before = startsDigit ? '(?<![0-9]|[0-9],)' : (/^[a-z0-9]/.test(k) ? '(?<![a-z0-9])' : '');
+    const after = endsDigit ? '(?![0-9]|,[0-9])' : (/[a-z0-9]$/.test(k) ? '(?![a-z0-9])' : '');
+    const match = new RegExp(before + escapeRegex(k) + after).exec(answer);
+    return match ? match.index : -1;
+  }
+
+  const NEGATION = /(?:^|\s)(nicht|kein|keine|keinen|keiner|nie|niemals|ohne|verwechseln|verwechselt|unterschied|gegensatz|anders als)(?=\s|$)/;
+
+  /** Prüft, ob vor der Fundstelle eine Verneinung oder Abgrenzung steht. */
+  function isNegated(answer, index) {
+    const words = answer.slice(0, index).split(' ').slice(-6).join(' ');
+    return NEGATION.test(words);
+  }
+
   /**
    * Lokale, regelbasierte Bewertung einer frei formulierten Antwort.
    * Ein Kernpunkt gilt als genannt, wenn eines seiner Schlüsselwörter vorkommt.
+   * Typische Fehler (wrongClaims) werden erkannt, sofern sie nicht verneint sind.
    */
   function evaluateAnswer(question, answerText) {
     const answer = normalize(answerText);
     const words = answer ? answer.split(' ').length : 0;
     const covered = [];
     const missing = [];
+    const wrong = [];
 
     for (const point of question.keyPoints) {
-      const hit = answer && point.keywords.some(k => answer.includes(normalize(k)));
+      const hit = answer && point.keywords.some(k => findKeyword(answer, k) >= 0);
       (hit ? covered : missing).push(point.label);
+    }
+
+    for (const claim of question.wrongClaims || []) {
+      const hit = answer && claim.keywords.some(k => {
+        const index = findKeyword(answer, k);
+        return index >= 0 && !isNegated(answer, index);
+      });
+      if (hit) wrong.push(claim.label);
     }
 
     const total = question.keyPoints.length || 1;
     let score = covered.length / total;
     // Sehr kurze Antworten können Schlüsselwörter zufällig enthalten – leicht abwerten.
     if (words > 0 && words < 8) score *= 0.8;
+    score -= Math.min(0.45, wrong.length * 0.15);
     score = Math.round(clamp(score, 0, 1) * 100) / 100;
 
-    return { score, covered, missing, words, feedback: buildFeedback(score, missing) };
+    return { score, covered, missing, wrong, words, feedback: buildFeedback(score, missing, wrong) };
   }
 
-  function buildFeedback(score, missing) {
-    if (score >= 0.85) return 'Sehr gut – Sie haben die wesentlichen Punkte genannt.';
-    if (score >= 0.6) return `Gute Antwort. Ergänzen Sie noch: ${missing.slice(0, 2).join(', ')}.`;
-    if (score >= 0.3) return `Teilweise richtig. Es fehlen wichtige Punkte, z. B. ${missing.slice(0, 3).join(', ')}.`;
-    return 'Hier fehlt noch viel. Lesen Sie die Erklärung und die Musterantwort in Ruhe durch.';
+  function buildFeedback(score, missing, wrong) {
+    const wrongNote = wrong && wrong.length ? ' Achtung: Ein Teil Ihrer Aussage ist fachlich falsch – siehe unten.' : '';
+    if (score >= 0.85) return `Sehr gut – Sie haben die wesentlichen Punkte genannt.${wrongNote}`;
+    if (score >= 0.6) return `Gute Antwort. Ergänzen Sie noch: ${missing.slice(0, 2).join(', ')}.${wrongNote}`;
+    if (score >= 0.3) return `Teilweise richtig. Es fehlen wichtige Punkte, z. B. ${missing.slice(0, 3).join(', ')}.${wrongNote}`;
+    return `Hier fehlt noch viel. Lesen Sie die Erklärung und die Musterantwort in Ruhe durch.${wrongNote}`;
   }
 
   /** Verbindet automatische Bewertung und Selbsteinschätzung zu einem Ergebnis. */
@@ -449,13 +491,14 @@
   // ------------------------------------------------------------------ Prüfungssimulation (lokal)
 
   /** Wählt je Fach eine Frage; schwächere und unbekannte Fragen werden bevorzugt. */
-  function pickExamQuestions(data, state, now, count) {
+  function pickExamQuestions(data, state, now, count, options) {
     const ts = typeof now === 'number' ? now : Date.now();
     const rand = seededRandom(`exam-${ts}`);
     const n = count || data.subjects.length;
+    const withSigns = !(options && options.excludeSigns);
     const picked = [];
     for (const subject of shuffle(data.subjects, rand)) {
-      const pool = data.questions.filter(q => q.subject === subject.id);
+      const pool = data.questions.filter(q => q.subject === subject.id && (withSigns || !q.sign));
       const ranked = shuffle(pool, rand).sort((a, b) => {
         const ma = questionMastery(state.attempts[a.id], ts);
         const mb = questionMastery(state.attempts[b.id], ts);

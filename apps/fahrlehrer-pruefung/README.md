@@ -9,8 +9,9 @@ braucht es kein Framework, keinen Build-Schritt und keine externen Abhängigkeit
 | Bereich | Was die App bietet |
 | --- | --- |
 | Übersicht | Lernfortschritt, Wissensstand und Prüfungsreife getrennt, Tagesziel, Lernserie, Fortschrittsbalken pro Fach |
-| Fächer | Verkehrszeichen, Pädagogik, Recht, Technik, Verkehrsverhalten, Berufspraxis (je 7 prüfungsnahe Fragen) |
-| Üben | Frage erst frei beantworten, danach Schnellbewertung, Erklärung in einfacher Sprache, Praxisbeispiel, Musterantwort und mögliche Nachfragen |
+| Fächer | Verkehrszeichen, Pädagogik, Recht, Technik, Verkehrsverhalten, Berufspraxis – insgesamt 171 Fragen, darunter 38 mündliche Prüfungsfragen (Verkehrsverhalten/Recht) und gut 40 Technikfragen |
+| Verkehrszeichen-Training | 36 Zeichen als Grafik: Zeichen sehen, Antwort einsprechen oder tippen, Rückmeldung zu „richtig erwähnt“, „falsch“ und „hat gefehlt“ |
+| Üben | Frage erst frei beantworten (tippen oder einsprechen), danach Schnellbewertung, Erklärung in einfacher Sprache, Praxisbeispiel, Musterantwort und mögliche Nachfragen |
 | Heute | Tagesplan aus fälligen Wiederholungen (Leitner-System), Schwächen und neuen Themen |
 | Prüfung | Simulation der mündlichen Prüfung mit Nachfragen, wahlweise mit Trainings-Prüfer (offline) oder KI-Prüfer |
 | Analyse | Schwache Themen, häufig vergessene Kernpunkte, Fächervergleich, Trend und konkrete Empfehlungen |
@@ -51,10 +52,27 @@ die das Grundgerüst selbst ergänzen.
 Den Fortschritt übertragen Sie zwischen Geräten über *Einstellungen →
 Sicherungscode anzeigen* und *Sicherungscode einfügen*.
 
+## Spracheingabe
+
+„Antwort einsprechen“ nutzt die eingebaute Spracherkennung des Browsers
+(Web Speech API, Deutsch). Sie funktioniert z. B. in Chrome, Edge und Safari,
+wenn die Seite über `localhost` oder HTTPS geöffnet wird. Wo die Seite keinen
+Mikrofonzugriff bekommt (etwa als eingebettete Seite), diktieren Sie über die
+Mikrofon-Taste der Handy-Tastatur direkt ins Antwortfeld.
+
+Die lokale Bewertung erkennt neben fehlenden Kernpunkten auch typische
+Fehler, z. B. „beim Stoppschild reicht langsames Durchrollen“. Verneinungen wie
+„nicht durchrollen“ werden dabei berücksichtigt.
+
 ## KI-Bewertung und KI-Prüfer aktivieren
 
-Die KI-Funktionen nutzen die Claude API über das offizielle SDK
-`@anthropic-ai/sdk`:
+Es gibt zwei Wege:
+
+1. **Als gehostete Seite auf claude.ai:** Hier nutzt die App Claude über das
+   Konto der Person, die die Seite öffnet. Beim ersten Einsatz fragt Claude, ob
+   die Seite die KI nutzen darf.
+2. **Mit dem eigenen Server** und einem API-Schlüssel, über das offizielle SDK
+   `@anthropic-ai/sdk`:
 
 ```bash
 cd apps/fahrlehrer-pruefung
@@ -88,7 +106,12 @@ apps/fahrlehrer-pruefung/
   public/index.html         App-Hülle mit Navigation
   public/app.js             Oberfläche (Views, Übung, Prüfung, Analyse)
   public/core/learning-core.js  Lernlogik: Bewertung, Fortschritt, Wiederholung, Analyse
-  public/data/questions.js  Fragenkatalog (Fächer, Fragen, Musterantworten, Kernpunkte)
+  public/core/ai-prompts.js     Anweisungen für KI-Bewertung und KI-Prüfer (Server und claude.ai)
+  public/data/questions.js      Fächer, Grundfragen und Zusammenführung aller Fragen
+  public/data/questions-muendlich.js  Mündliche Prüfungsfragen Verkehrsverhalten/Recht
+  public/data/questions-technik.js    Technikfragen
+  public/data/signs.js          Verkehrszeichen: Bedeutung, Kernpunkte, typische Fehler
+  public/data/sign-graphics.js  Verkehrszeichen als Vektorgrafiken
 ```
 
 Weitere Fragen ergänzen Sie in `public/data/questions.js`. Jede Frage braucht
@@ -99,8 +122,7 @@ eigenen Kernpunkte erfüllt.
 ## Tests
 
 ```bash
-node tests/apps/fahrlehrer-pruefung/learning-core.test.js
-node tests/apps/fahrlehrer-pruefung/server.test.js
+node tests/run-all.js apps/fahrlehrer-pruefung
 ```
 
 ## Hinweis

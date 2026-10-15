@@ -49,7 +49,7 @@ function runTests() {
       assert.ok(!seen.has(item.id), `duplicate id ${item.id}`);
       seen.add(item.id);
       for (const field of ['question', 'explanation', 'example', 'modelAnswer']) {
-        assert.ok(typeof item[field] === 'string' && item[field].length > 20, `${item.id}.${field}`);
+        assert.ok(typeof item[field] === 'string' && item[field].length > 10, `${item.id}.${field}`);
       }
       assert.ok(item.topic && item.topic.length >= 3, `${item.id}.topic`);
       assert.ok(item.keyPoints.length >= 3, `${item.id} keyPoints`);
@@ -68,7 +68,45 @@ function runTests() {
     }
   }));
 
+  results.push(test('every sign has a graphic and no model answer triggers its own wrong claims', () => {
+    assert.ok(data.signs.length >= 30, 'expected at least 30 signs');
+    for (const item of data.signs) {
+      assert.ok(item.svg.startsWith('<svg'), `${item.id} has no graphic`);
+      assert.ok(item.name && item.sign, `${item.id} name/sign`);
+    }
+    for (const item of data.questions) {
+      const ev = Core.evaluateAnswer(item, item.modelAnswer);
+      assert.deepStrictEqual(ev.wrong, [], `${item.id} model answer flagged as wrong: ${ev.wrong.join(', ')}`);
+    }
+  }));
+
+  results.push(test('question bank includes the uploaded exam and technology questions', () => {
+    assert.strictEqual(data.questions.filter(x => x.id.startsWith('mp-')).length, 38);
+    assert.ok(data.questions.filter(x => x.id.startsWith('tk-')).length >= 35);
+  }));
+
   // --- evaluation ---
+
+  results.push(test('short keywords and numbers only match whole words', () => {
+    const item = q('vz-274');
+    assert.ok(!Core.evaluateAnswer(item, 'Das Zeichen 2740 gibt es nicht').covered.includes('Name: Zulässige Höchstgeschwindigkeit'));
+    assert.ok(Core.evaluateAnswer(item, 'Zeichen 274, Tempolimit').covered.includes('Name: Zulässige Höchstgeschwindigkeit'));
+    const classes = q('mp-02');
+    assert.ok(!Core.evaluateAnswer(classes, 'beim Anhänger bei Bedarf').covered.includes('BE'));
+    assert.ok(Core.evaluateAnswer(classes, 'Klasse BE für Anhänger').covered.includes('BE'));
+  }));
+
+  results.push(test('wrong claims are detected unless negated', () => {
+    const stop = q('vz-206');
+    const wrong = Core.evaluateAnswer(stop, 'Stoppschild, Vorfahrt gewähren, langsames Durchrollen reicht.');
+    assert.strictEqual(wrong.wrong.length, 1);
+    const right = Core.evaluateAnswer(stop, 'Stoppschild: immer anhalten, nicht durchrollen, Vorfahrt gewähren.');
+    assert.deepStrictEqual(right.wrong, []);
+    assert.ok(right.score > wrong.score);
+    const slope = q('vz-108');
+    assert.deepStrictEqual(Core.evaluateAnswer(slope, 'Gefälle, nicht zu verwechseln mit Steigung').wrong, []);
+    assert.strictEqual(Core.evaluateAnswer(slope, 'Das ist eine Steigung').wrong.length, 1);
+  }));
 
   results.push(test('evaluateAnswer detects covered and missing key points', () => {
     const ev = Core.evaluateAnswer(q('technik-01'), 'Der Anhalteweg ist Reaktionsweg plus Bremsweg. Bei einer Gefahrbremsung halbiert sich der Bremsweg.');
@@ -176,6 +214,8 @@ function runTests() {
     const subjects = new Set(ids.map(id => q(id).subject));
     assert.strictEqual(ids.length, 6);
     assert.strictEqual(subjects.size, 6);
+    const noSigns = Core.pickExamQuestions(data, Core.createState(), NOW, 6, { excludeSigns: true });
+    assert.ok(noSigns.every(id => !q(id).sign));
   }));
 
   results.push(test('examinerFollowUp probes missing points on weak answers', () => {

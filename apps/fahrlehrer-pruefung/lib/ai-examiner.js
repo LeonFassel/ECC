@@ -7,10 +7,10 @@
  * Client wird von außen übergeben, damit sich alles ohne Netzwerk testen lässt.
  */
 
+const Prompts = require('../public/core/ai-prompts.js');
+
 const MODEL = process.env.FL_CLAUDE_MODEL || 'claude-opus-5-5';
 const FALLBACK_BETA = 'server-side-fallback-2026-07-01';
-const MAX_ANSWER_CHARS = 6000;
-const MAX_TURNS = 40;
 
 const EVALUATION_SCHEMA = {
   type: 'object',
@@ -49,44 +49,6 @@ const EXAMINER_SCHEMA = {
   additionalProperties: false
 };
 
-const EVALUATION_SYSTEM = [
-  'Du bist erfahrenes Mitglied eines Prüfungsausschusses für die Fahrlehrerprüfung (Fahrlehrerlaubnisklasse BE) in Deutschland.',
-  'Du bewertest die frei formulierte Antwort eines Prüflings auf eine Frage aus der mündlichen Fachkundeprüfung.',
-  'Grundlage sind die Musterantwort und die Kernpunkte. Gleichwertige Formulierungen und zusätzliche richtige Inhalte zählen positiv; fachliche Fehler zählen negativ.',
-  'Antworte in einfachem, freundlichem Deutsch. Sprich den Prüfling mit „Sie“ an.',
-  'score: 0 = nichts Relevantes, 0.5 = etwa die Hälfte der Kernpunkte korrekt, 1 = vollständig und fehlerfrei.',
-  'covered/missing: Verwende die Bezeichnungen der Kernpunkte. errors: konkrete fachliche Fehler (leer, wenn keine).',
-  'feedback: 2–4 Sätze zur Antwort. tip: ein konkreter Lerntipp.'
-].join('\n');
-
-const EXAMINER_SYSTEM = [
-  'Du bist Vorsitzende/r des Prüfungsausschusses in einer mündlichen Fachkundeprüfung für Fahrlehreranwärter (Klasse BE) in Deutschland.',
-  'Führe eine realistische, faire mündliche Prüfung auf Deutsch. Sprich den Prüfling mit „Sie“ an.',
-  'Ablauf: Stelle die vorgegebenen Prüfungsfragen nacheinander in der angegebenen Reihenfolge. Hake nach jeder Antwort ein- bis zweimal gezielt nach,',
-  'wenn Kernpunkte fehlen, etwas unklar oder falsch ist oder um Praxistransfer zu prüfen (z. B. „Wie würden Sie das einem Fahrschüler erklären?“).',
-  'Verrate keine Musterlösung während der Prüfung. Gib höchstens einen kleinen Denkanstoß, wenn der Prüfling feststeckt.',
-  'Wenn eine Frage abgeschlossen ist, setze assessment.completed = true, trage die questionId ein und bewerte die Gesamtleistung zu dieser Frage (score 0..1, fehlende Kernpunkte, kurzer Kommentar).',
-  'Leite dann in message direkt zur nächsten Frage über. Andernfalls assessment.completed = false, questionId = "", score = 0, missing = [], comment = "".',
-  'Nach der letzten Frage: finished = true und summary mit einer ehrlichen Gesamteinschätzung (Stärken, Lücken, Empfehlung). Sonst finished = false, summary = "".',
-  'Halte deine Beiträge kurz wie in einer echten Prüfung (1–4 Sätze).'
-].join('\n');
-
-function questionBrief(q) {
-  return [
-    `Frage-ID: ${q.id}`,
-    `Thema: ${q.topic}`,
-    `Frage: ${q.question}`,
-    `Musterantwort: ${q.modelAnswer}`,
-    `Kernpunkte: ${q.keyPoints.map(p => p.label).join('; ')}`,
-    `Mögliche Nachfragen: ${q.followUps.join(' | ')}`
-  ].join('\n');
-}
-
-function clampText(text, max) {
-  const value = String(text || '');
-  return value.length > max ? value.slice(0, max) : value;
-}
-
 function baseParams() {
   return {
     model: MODEL,
@@ -98,22 +60,12 @@ function baseParams() {
 
 function buildEvaluationRequest(question, answer) {
   return Object.assign(baseParams(), {
-    system: EVALUATION_SYSTEM,
+    system: Prompts.EVALUATION_SYSTEM,
     output_config: {
       effort: 'medium',
       format: { type: 'json_schema', schema: EVALUATION_SCHEMA }
     },
-    messages: [{
-      role: 'user',
-      content: [
-        questionBrief(question),
-        '',
-        'Antwort des Prüflings:',
-        '<antwort>',
-        clampText(answer, MAX_ANSWER_CHARS),
-        '</antwort>'
-      ].join('\n')
-    }]
+    messages: [{ role: 'user', content: Prompts.evaluationUserText(question, answer) }]
   });
 }
 
@@ -122,32 +74,13 @@ function buildEvaluationRequest(question, answer) {
  * Die Prüfung startet mit einer leeren Historie; der Prüfer eröffnet dann.
  */
 function buildExaminerRequest(questions, history) {
-  const plan = questions.map((q, i) => `### Prüfungsfrage ${i + 1}\n${questionBrief(q)}`).join('\n\n');
-  const turns = (history || []).slice(-MAX_TURNS);
-  const messages = [{
-    role: 'user',
-    content: `Prüfungsplan (nur für dich als Prüfer sichtbar):\n\n${plan}\n\nBeginne jetzt die Prüfung mit einer kurzen Begrüßung und der ersten Frage.`
-  }];
-  for (const turn of turns) {
-    const role = turn.role === 'candidate' ? 'user' : 'assistant';
-    const content = role === 'user' ? `<pruefling>${clampText(turn.text, MAX_ANSWER_CHARS)}</pruefling>` : clampText(turn.text, MAX_ANSWER_CHARS);
-    const prev = messages[messages.length - 1];
-    if (prev.role === role) {
-      prev.content += `\n\n${content}`;
-    } else {
-      messages.push({ role, content });
-    }
-  }
-  if (messages[messages.length - 1].role === 'assistant') {
-    messages.push({ role: 'user', content: '(Der Prüfling wartet auf Ihre nächste Frage.)' });
-  }
   return Object.assign(baseParams(), {
-    system: EXAMINER_SYSTEM,
+    system: Prompts.EXAMINER_SYSTEM,
     output_config: {
       effort: 'low',
       format: { type: 'json_schema', schema: EXAMINER_SCHEMA }
     },
-    messages
+    messages: Prompts.examinerMessages(questions, history)
   });
 }
 
@@ -180,45 +113,16 @@ function parseStructured(response) {
   }
 }
 
-function normalizeScore(value) {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return 0;
-  return Math.round(Math.min(1, Math.max(0, n)) * 100) / 100;
-}
-
 function createAiService(client) {
   return {
     async evaluate(question, answer) {
       const response = await client.beta.messages.create(buildEvaluationRequest(question, answer));
-      const data = parseStructured(response);
-      return {
-        score: normalizeScore(data.score),
-        covered: Array.isArray(data.covered) ? data.covered : [],
-        missing: Array.isArray(data.missing) ? data.missing : [],
-        errors: Array.isArray(data.errors) ? data.errors : [],
-        feedback: String(data.feedback || ''),
-        tip: String(data.tip || ''),
-        model: response.model
-      };
+      return Object.assign(Prompts.normalizeEvaluation(parseStructured(response)), { model: response.model });
     },
 
     async examine(questions, history) {
       const response = await client.beta.messages.create(buildExaminerRequest(questions, history));
-      const data = parseStructured(response);
-      const assessment = data.assessment && data.assessment.completed
-        ? {
-          questionId: String(data.assessment.questionId || ''),
-          score: normalizeScore(data.assessment.score),
-          missing: Array.isArray(data.assessment.missing) ? data.assessment.missing : [],
-          comment: String(data.assessment.comment || '')
-        }
-        : null;
-      return {
-        message: String(data.message || ''),
-        assessment,
-        finished: Boolean(data.finished),
-        summary: String(data.summary || '')
-      };
+      return Prompts.normalizeExaminerTurn(parseStructured(response));
     }
   };
 }

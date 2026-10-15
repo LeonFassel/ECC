@@ -18,6 +18,7 @@
   --shadow: 0 1px 2px rgba(15, 23, 42, .06), 0 4px 16px rgba(15, 23, 42, .06);
   --radius: 14px;
   --nav-w: 232px;
+  --sign-bg: #f7f8fa;
   color-scheme: light;
 }
 
@@ -40,6 +41,7 @@
     --bad-soft: #3d1a1a;
     --track: #26304a;
     --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 4px 16px rgba(0, 0, 0, .25);
+    --sign-bg: #e9ecf2;
     color-scheme: dark;
   }
 }
@@ -62,6 +64,7 @@
   --bad-soft: #3d1a1a;
   --track: #26304a;
   --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 4px 16px rgba(0, 0, 0, .25);
+  --sign-bg: #e9ecf2;
   color-scheme: dark;
 }
 
@@ -286,10 +289,56 @@ textarea { min-height: 150px; resize: vertical; }
 .list a { color: inherit; text-decoration: none; font-weight: 600; }
 .list a:hover { color: var(--primary); }
 
-.points { list-style: none; margin: 8px 0 0; padding: 0; }
-.points li { display: flex; gap: 8px; padding: 4px 0; }
+.points { list-style: none; margin: 4px 0 0; padding: 0; }
+.points li { display: flex; gap: 8px; padding: 3px 0; }
 .points .ok { color: var(--good); font-weight: 800; }
 .points .no { color: var(--bad); font-weight: 800; }
+.points .miss { color: var(--muted); font-weight: 800; }
+.points li.wrong { color: var(--bad); font-weight: 600; }
+.points-title { margin: 12px 0 0; font-size: .8rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+
+/* ------------------------------------------------------------- Verkehrszeichen */
+.sign-stage {
+  display: flex;
+  justify-content: center;
+  margin: 14px 0 4px;
+  padding: 18px;
+  border-radius: 14px;
+  background: var(--sign-bg);
+  border: 1px solid var(--border);
+}
+.sign-stage svg { width: min(220px, 60vw); height: auto; display: block; }
+.sign-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 10px; }
+.sign-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 6px 8px;
+  border-radius: 12px;
+  background: var(--sign-bg);
+  border: 2px solid var(--border);
+  color: #3b4252;
+  text-decoration: none;
+  font-size: .8rem;
+  font-weight: 700;
+}
+.sign-tile svg { width: 64px; height: 64px; }
+.sign-tile.sicher { border-color: var(--good); }
+.sign-tile.mittel { border-color: var(--warn); }
+.sign-tile.schwach { border-color: var(--bad); }
+.sign-teaser { display: grid; grid-template-columns: auto 1fr; gap: 18px; align-items: center; }
+.sign-strip { display: grid; grid-template-columns: repeat(3, 52px); gap: 6px; padding: 10px; border-radius: 12px; background: var(--sign-bg); }
+.sign-strip svg { width: 52px; height: 52px; display: block; }
+@media (max-width: 520px) {
+  .sign-teaser { grid-template-columns: 1fr; }
+  .sign-strip { grid-template-columns: repeat(6, 1fr); }
+  .sign-strip svg { width: 100%; height: auto; }
+}
+
+.btn.mic .nav-icon { width: 20px; height: 20px; }
+.btn.mic.recording { background: var(--bad); border-color: var(--bad); color: #fff; animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 50% { box-shadow: 0 0 0 6px var(--bad-soft); } }
 
 .panel { border-radius: 12px; padding: 14px 16px; background: var(--surface-2); margin-top: 12px; }
 .panel h3 { margin-bottom: 6px; }
