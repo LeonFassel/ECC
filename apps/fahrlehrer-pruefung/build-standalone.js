@@ -18,6 +18,7 @@ const PUBLIC_DIR = path.join(__dirname, 'public');
 const SCRIPTS = [
   'data/questions-muendlich.js',
   'data/questions-technik.js',
+  'data/questions-sammlung.js',
   'data/signs.js',
   'data/signs-stvo.js',
   'data/sign-images.js',

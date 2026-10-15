@@ -286,6 +286,16 @@
     return isSignCard(q) ? `<div class="sign-stage">${signImages(q, 'Abbildung des Verkehrszeichens')}</div>` : '';
   }
 
+  // Abbildungen aus der Prüfungsfragen-Sammlung (z. B. Verkehrszeichen a–f, Motorraum-Skizze).
+  function figureStage(q) {
+    if (!q || !Array.isArray(q.figures) || q.figures.length === 0) return '';
+    return `<div class="figure-grid">${q.figures.map(f => `<figure><img src="${esc(f.src)}" alt="${esc(f.alt || 'Abbildung zur Frage')}" loading="lazy" decoding="async">${f.label ? `<figcaption>${esc(f.label)}</figcaption>` : ''}</figure>`).join('')}</div>`;
+  }
+
+  function questionStage(q) {
+    return signStage(q) + figureStage(q);
+  }
+
   const SIGN_GROUPS = [
     { id: 'gefahr', label: 'Gefahrzeichen', match: c => c.startsWith('Gefahrzeichen') },
     { id: 'vorschrift', label: 'Vorschriftzeichen', match: c => c.startsWith('Vorschriftzeichen') },
@@ -333,7 +343,7 @@
     const r = route();
     const key = `${r.name}/${r.param || ''}`;
     document.querySelectorAll('[data-nav]').forEach(a => {
-      const active = a.dataset.nav === r.name || (a.dataset.nav === 'faecher' && r.name === 'fach');
+      const active = a.dataset.nav === r.name || (a.dataset.nav === 'faecher' && (r.name === 'fach' || r.name === 'sammlung'));
       a.classList.toggle('active', active);
       if (active) a.setAttribute('aria-current', 'page');
       else a.removeAttribute('aria-current');
@@ -344,6 +354,7 @@
       heute: renderToday,
       faecher: renderSubjects,
       fach: () => renderSubject(r.param),
+      sammlung: renderCollection,
       frage: () => renderSingleQuestion(r.param),
       ueben: renderPractice,
       pruefung: renderExam,
@@ -486,7 +497,16 @@
         <p>Wählen Sie ein Fach, um Fragen zu üben oder Ihren Stand im Detail zu sehen.</p>
       </header>
       <div class="grid grid-2">${stats.map(stat => subjectCard(stat).replace('</h3>', `</h3><p class="small">${esc(stat.subject.description)}</p>`)).join('')}</div>
+      ${renderCollectionTeaser()}
     `;
+  }
+
+  function renderCollectionTeaser() {
+    const count = questions.filter(q => q.collection === 'sammlung').length;
+    if (!count) return '';
+    return `<div class="card section"><h2>Prüfungsfragen-Sammlung</h2>
+      <p class="muted">${count} schriftliche Prüfungsfragen (Verkehrspädagogik, Verkehrsverhaltenslehre, Technik) in der Nummerierung der Vorlage – mit recherchierten Musterantworten.</p>
+      <div class="btn-row"><a class="btn primary" href="#/sammlung">Sammlung öffnen</a></div></div>`;
   }
 
   function renderSubject(id) {
@@ -495,6 +515,7 @@
     const ts = now();
     const stat = Core.subjectStats(window.FLData, state, ts).find(s => s.subject.id === id);
     const list = questions.filter(q => q.subject === id);
+    const collection = list.filter(q => q.collection === 'sammlung');
 
     return `
       <header class="page-head">
@@ -519,16 +540,14 @@
             ${id === 'zeichen' ? '<button class="btn primary" data-action="practice-signs">Zeichen-Training mit Bildern</button>' : ''}
             <button class="btn ${id === 'zeichen' ? '' : 'primary'}" data-action="practice-subject" data-subject="${esc(id)}">Alle Fragen üben</button>
             <button class="btn" data-action="practice-subject-weak" data-subject="${esc(id)}" ${stat.levels.schwach + stat.levels.mittel === 0 ? 'disabled' : ''}>Nur Schwächen</button>
+            ${collection.length ? `<button class="btn" data-action="practice-ids" data-title="${esc(subject.name)} – Prüfungsfragen-Sammlung" data-ids="${esc(collection.map(q => q.id).join(','))}">Sammlungsfragen (${collection.length})</button>` : ''}
           </div>
         </div>
       </div>
       ${id === 'zeichen' ? renderSignCatalog(ts) : ''}
       <div class="section-title"><h2>Fragen</h2></div>
       <div class="card">
-        <ul class="list">${list.filter(q => !isSignCard(q)).map(q => {
-          const mastery = Core.questionMastery(state.attempts[q.id], ts);
-          return `<li><div><a href="#/frage/${esc(q.id)}">${esc(q.topic)}</a><div class="small muted">${esc(q.question)}</div></div>${levelChip(mastery)}</li>`;
-        }).join('')}</ul>
+        <ul class="list">${list.filter(q => !isSignCard(q)).map(q => questionListItem(q, ts)).join('')}</ul>
       </div>
     `;
   }
@@ -548,6 +567,51 @@
         const label = item.sign ? item.sign : (item.kind || 'Zeichen');
         return `<a href="#/frage/${esc(item.id)}" class="sign-tile ${level.id}" title="${esc(item.signLabel || label)}">${signImages(item, '')}<span>${esc(label)}</span></a>`;
       }).join('')}</div>`).join('')}`;
+  }
+
+  function questionListItem(q, ts) {
+    const mastery = Core.questionMastery(state.attempts[q.id], ts);
+    const firstLine = q.question.split('\n')[0];
+    const preview = firstLine.length > 180 ? `${firstLine.slice(0, 177)} …` : firstLine;
+    const badge = q.collection === 'sammlung' ? `<span class="chip">${esc(q.sectionName)} Nr. ${esc(q.numbers.join(', '))}</span> ` : '';
+    return `<li><div><a href="#/frage/${esc(q.id)}">${esc(q.topic)}</a><div class="small muted">${badge}${esc(preview)}</div></div>${levelChip(mastery)}</li>`;
+  }
+
+  // Frage der Sammlung, die bereits als eigene Frage in der App steht: Verweis statt Dublette.
+  function coveredListItem(entry) {
+    const firstLine = entry.question.split('\n')[0];
+    const preview = firstLine.length > 180 ? `${firstLine.slice(0, 177)} …` : firstLine;
+    const links = entry.coveredBy.filter(id => questionById.has(id))
+      .map(id => `<a href="#/frage/${esc(id)}">${esc(questionById.get(id).topic)}</a>`).join(' · ');
+    return `<li><div><span class="small muted"><span class="chip">${esc(entry.sectionName)} Nr. ${esc(entry.numbers.join(', '))}</span> ${esc(preview)}</span>
+      <div class="small">Bereits enthalten: ${links}</div></div></li>`;
+  }
+
+  // Prüfungsfragen-Sammlung in der Gliederung und Nummerierung der Vorlage.
+  function renderCollection() {
+    const ts = now();
+    const items = questions.filter(q => q.collection === 'sammlung');
+    const covered = window.FLData.collectionCovered || [];
+    const order = ['Verkehrspädagogik', 'Verkehrsverhaltenslehre', 'Technik'];
+    const sections = order.map(name => ({
+      name,
+      items: items.filter(q => q.sectionName === name),
+      entries: items.filter(q => q.sectionName === name).concat(covered.filter(c => c.sectionName === name))
+        .sort((a, b) => a.numbers[0] - b.numbers[0])
+    })).filter(s => s.entries.length > 0);
+    return `
+      <header class="page-head">
+        <p><a href="#/faecher">Fächer</a></p>
+        <h1>Prüfungsfragen-Sammlung</h1>
+        <p>Schriftliche Prüfungsfragen für den Fahrlehrerlehrgang BE – Fragen unverändert aus der Vorlage, Musterantworten recherchiert. Gleichlautende Fragen sind zusammengefasst; Fragen, die schon in der App stehen, sind verlinkt statt doppelt aufgenommen.</p>
+      </header>
+      <div class="card"><div class="btn-row">
+        ${sections.map(s => `<button class="btn" data-action="practice-ids" data-title="${esc(s.name)}" data-ids="${esc(s.items.map(q => q.id).join(','))}">${esc(s.name)} üben (${s.items.length})</button>`).join('')}
+      </div></div>
+      ${sections.map(s => `
+      <div class="section-title"><h2>${esc(s.name)}</h2><span class="small muted">${s.items.length} Fragen</span></div>
+      <div class="card"><ul class="list">${s.entries.map(q => (q.coveredBy ? coveredListItem(q) : questionListItem(q, ts))).join('')}</ul></div>`).join('')}
+    `;
   }
 
   // ------------------------------------------------------------------ Üben
@@ -586,8 +650,8 @@
       ${bar(practice.index / practice.queue.length, 'thin')}
       <div class="card section">
         <div style="display:flex;gap:8px;flex-wrap:wrap">${subjectChip(q.subject)}${topicChip}<span class="chip">Schwierigkeit ${'●'.repeat(q.difficulty)}${'○'.repeat(3 - q.difficulty)}</span></div>
-        ${signStage(q)}
-        <p class="question-text">${esc(q.question)}</p>`;
+        ${questionStage(q)}
+        <p class="question-text${q.question.length > 160 ? ' long' : ''}">${esc(q.question)}</p>`;
 
     if (!reviewing) {
       return `${head}
@@ -606,9 +670,11 @@
         ${renderOfficialText(q)}
         ${q.explanation ? `<div class="panel info"><h3>Einfach erklärt</h3><p>${esc(q.explanation)}</p></div>` : ''}
         ${q.example ? `<div class="panel"><h3>Praxisbeispiel</h3><p>${esc(q.example)}</p></div>` : ''}
-        <details class="disclosure" open><summary>Musterantwort</summary><p>${esc(q.modelAnswer)}</p>
+        ${q.note ? `<div class="panel warn"><h3>Hinweis</h3><p>${esc(q.note)}</p></div>` : ''}
+        <details class="disclosure" open><summary>Musterantwort</summary><p class="pre-line">${esc(q.modelAnswer)}</p>
           <p class="small muted">Kernpunkte: ${q.keyPoints.map(p => esc(p.label)).join(' · ')}</p>
-          ${q.source ? `<p class="small muted">Quelle der Frage: ${esc(q.source)}</p>` : ''}</details>
+          ${q.source ? `<p class="small muted">Quelle der Frage: ${esc(q.source)}</p>` : ''}
+          ${renderAnswerSources(q)}</details>
         <details class="disclosure"><summary>Mögliche Nachfragen des Prüfers</summary><ul>${q.followUps.map(f => `<li>${esc(f)}</li>`).join('')}</ul></details>
         <h3 style="margin-top:18px">Wie gut wussten Sie es?</h3>
         <div class="btn-row">
@@ -617,6 +683,15 @@
           <button class="btn bad" data-action="rate" data-score="0">Nicht gewusst</button>
         </div>
       </div>`;
+  }
+
+  // Belege der Musterantwort; nur http(s)-Links werden verlinkt.
+  function renderAnswerSources(q) {
+    if (!Array.isArray(q.sources) || q.sources.length === 0) return '';
+    return `<p class="small muted">Belege der Musterantwort:</p><ul class="small muted sources">${q.sources.map(src => {
+      const safe = /^https?:\/\//i.test(src.url || '') ? src.url : '';
+      return `<li>${safe ? `<a href="${esc(safe)}" target="_blank" rel="noopener noreferrer">${esc(src.title || safe)}</a>` : esc(src.title || '')}</li>`;
+    }).join('')}</ul>`;
   }
 
   function renderAutoEvaluation(auto) {
@@ -755,7 +830,7 @@
           ${exam.loading ? '<div class="bubble examiner"><span class="spinner" aria-label="Prüfer denkt nach"></span></div>' : ''}
         </div>
         ${exam.error ? `<div class="panel bad"><p>${esc(exam.error)}</p><button class="btn" data-action="exam-retry">Erneut versuchen</button></div>` : ''}
-        ${signStage(currentExamQuestion())}
+        ${questionStage(currentExamQuestion())}
         <label for="exam-answer" class="kpi-label">Ihre Antwort – tippen oder einsprechen</label>
         <textarea id="exam-answer" data-input="exam-answer" placeholder="Antworten Sie so, wie Sie es in der Prüfung sagen würden …" ${exam.loading ? 'disabled' : ''}>${esc(exam.draft)}</textarea>
         ${answerTools('exam', 'exam-send', 'Antwort abgeben')}
@@ -1107,7 +1182,7 @@
       const ids = questions.filter(q => q.subject === el.dataset.subject && q.topic === el.dataset.topic).map(q => q.id);
       startPractice(ids, el.dataset.topic);
     },
-    'practice-ids': el => startPractice(el.dataset.ids.split(','), 'Wiederholung'),
+    'practice-ids': el => startPractice(el.dataset.ids.split(','), el.dataset.title || 'Wiederholung'),
     'practice-signs': el => {
       const ts = now();
       const group = SIGN_GROUPS.find(g => g.id === el.dataset.group) || null;

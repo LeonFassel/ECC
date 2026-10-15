@@ -391,3 +391,16 @@ th { color: var(--muted); font-weight: 650; border-top: 0; }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
+
+/* ------------------------------------------------------------- Prüfungsfragen-Sammlung */
+.question-text { white-space: pre-line; }
+.question-text.long { font-size: 1rem; font-weight: 600; line-height: 1.5; }
+.pre-line { white-space: pre-line; }
+.figure-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 12px; margin: 14px 0 4px; }
+.figure-grid figure { margin: 0; padding: 10px; border-radius: 12px; background: var(--sign-bg); border: 1px solid var(--border); text-align: center; color: #3b4252; }
+.figure-grid img { width: 100%; height: auto; max-height: 160px; object-fit: contain; display: block; }
+.figure-grid figcaption { font-size: .8rem; font-weight: 700; margin-top: 6px; }
+.figure-grid figure:only-child { grid-column: 1 / -1; }
+.figure-grid figure:only-child img { max-height: 360px; }
+.sources { margin: 4px 0 0; padding-left: 18px; }
+.sources a { word-break: break-word; }

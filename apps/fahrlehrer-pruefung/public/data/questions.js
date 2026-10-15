@@ -17,14 +17,15 @@
     module.exports = factory(
       require('./questions-muendlich.js'),
       require('./questions-technik.js'),
+      require('./questions-sammlung.js'),
       require('./signs.js'),
       require('./signs-stvo.js'),
       require('./sign-images.js')
     );
   } else {
-    root.FLData = factory(root.FLQuestionsMuendlich, root.FLQuestionsTechnik, root.FLSigns, root.FLSignsStvo, root.FLSignImages);
+    root.FLData = factory(root.FLQuestionsMuendlich, root.FLQuestionsTechnik, root.FLQuestionsSammlung, root.FLSigns, root.FLSignsStvo, root.FLSignImages);
   }
-})(typeof self !== 'undefined' ? self : this, function (muendlich, technik, signExtras, stvo, signImages) {
+})(typeof self !== 'undefined' ? self : this, function (muendlich, technik, sammlung, signExtras, stvo, signImages) {
   'use strict';
 
   const subjects = [
@@ -977,7 +978,11 @@
   const all = questions
     .concat((muendlich && muendlich.questions) || [])
     .concat((technik && technik.questions) || [])
+    .concat((sammlung && sammlung.questions) || [])
     .concat(allSigns);
 
-  return { subjects, questions: all, signs };
+  // Sammlungsfragen, die inhaltlich schon als eigene Frage enthalten sind (Verweis statt Dublette).
+  const collectionCovered = (sammlung && sammlung.covered) || [];
+
+  return { subjects, questions: all, signs, collectionCovered };
 });
