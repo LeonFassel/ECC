@@ -961,10 +961,50 @@
   const EXTRA_FIELDS = ['explanation', 'example', 'modelAnswer', 'keyPoints', 'wrongClaims', 'followUps', 'difficulty'];
   const extras = new Map(((signExtras && signExtras.signs) || []).map(item => [item.id, item]));
   const imageMap = (signImages && signImages.images) || {};
+  // Bei Verkehrszeichen werden keine Paragrafen- oder Anlagenangaben erwartet: Verweise aus Kategorie,
+  // Musterantwort und Kernpunkten entfernen (der amtliche Text bleibt unverändert).
+  const LEGAL_PAREN = /\s*\((?:zu )?(?:§|Anlage \d)[^()]*\)/g;
+  // Nur ganze Sätze, die mit einem Paragrafen beginnen (z. B. „§ 2 Absatz 4 Satz 6 bleibt unberührt.“).
+  const PARAGRAPH_SENTENCE = /(^|[.!?:]\s+)(?:\d+\.\s*)?§[^.]*\.(?=\s|$)/g;
+  // Verweise, die inhaltlich etwas aussagen, in Klartext umformulieren.
+  const LEGAL_REWRITES = [
+    ['Beim Ausfahren ist § 10 zu beachten.', 'Beim Ausfahren muss man den fließenden Verkehr vorlassen und darf niemanden gefährden.'],
+    ['beim Ausfahren bin ich nach § 10 StVO wartepflichtig.', 'beim Ausfahren bin ich wartepflichtig und muss den fließenden Verkehr vorlassen.']
+  ];
+  const stripLegalRefs = text => LEGAL_REWRITES
+    .reduce((acc, [from, to]) => acc.split(from).join(to), String(text || ''))
+    .replace(LEGAL_PAREN, '').replace(PARAGRAPH_SENTENCE, '$1').replace(/\s{2,}/g, ' ').trim();
+  // Vorfahrt- bzw. Vorrang-gewähren-Zeichen sind Vorschriftzeichen (Anlage 2), keine Vorrangzeichen (Anlage 3).
+  const WAIT_SIGNS = new Set(['vz-205', 'vz-206', 'vz-208']);
+  const CATEGORY_CLAIMS = [
+    { prefix: 'Vorschriftzeichen', claim: { label: 'Falsch eingeordnet: Das ist ein Vorschriftzeichen, kein Richt- oder Vorrangzeichen', keywords: ['richtzeichen', 'vorrangzeichen'] } },
+    { prefix: 'Richtzeichen', claim: { label: 'Falsch eingeordnet: Das ist ein Richtzeichen, kein Vorschriftzeichen', keywords: ['vorschriftzeichen'] } }
+  ];
+
+  function withoutLegalRefs(card) {
+    card.category = stripLegalRefs(card.category);
+    card.modelAnswer = stripLegalRefs(card.modelAnswer);
+    const points = card.keyPoints
+      .filter(point => !/^(?:\d+\.\s*)?§/.test(point.label))
+      .map(point => Object.assign({}, point, {
+        label: stripLegalRefs(point.label),
+        keywords: point.keywords.filter(word => !/§/.test(word))
+      }))
+      .filter(point => point.keywords.length > 0);
+    if (points.length) card.keyPoints = points;
+    return card;
+  }
+
   const allSigns = ((stvo && stvo.signs) || []).map(item => {
     const extra = extras.get(item.id);
     const merged = Object.assign({ explanation: '', example: '' }, item);
     if (extra) EXTRA_FIELDS.forEach(field => { if (extra[field] !== undefined) merged[field] = extra[field]; });
+    withoutLegalRefs(merged);
+    const rule = CATEGORY_CLAIMS.find(entry => (merged.category || '').startsWith(entry.prefix));
+    if (rule) merged.wrongClaims = (merged.wrongClaims || []).concat([rule.claim]);
+    if (WAIT_SIGNS.has(merged.id)) {
+      merged.keyPoints = merged.keyPoints.concat([{ label: 'Vorschriftzeichen (kein Vorrangzeichen)', keywords: ['vorschriftzeichen'] }]);
+    }
     merged.imageSrc = (item.images || []).map(key => imageMap[key]).filter(Boolean);
     // Ohne Abbildung im Original (z. B. Parkflächenmarkierung) wird die Karte als Textfrage gestellt.
     if (merged.imageSrc.length === 0) {

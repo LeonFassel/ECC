@@ -389,7 +389,7 @@
 
   function renderOfficialText(q) {
     if (!Array.isArray(q.official) || q.official.length === 0) return '';
-    return `<details class="disclosure" open><summary>Amtlicher Text (StVO, Anlage ${esc(q.anlage)})</summary>
+    return `<details class="disclosure" open><summary>Amtlicher Text (StVO)</summary>
       ${q.official.map(part => `<p><strong class="small">${esc(OFFICIAL_LABELS[part.type] || '')}:</strong> ${esc(part.text)}</p>`).join('')}
     </details>`;
   }
@@ -570,12 +570,19 @@
     const stats = Core.subjectStats(window.FLData, state, now());
     return `
       <header class="page-head">
+        <div class="page-head-nav">${backArrow()}</div>
         <h1>Fächer</h1>
         <p>Wählen Sie ein Fach, um Fragen zu üben oder Ihren Stand im Detail zu sehen.</p>
       </header>
       <div class="grid grid-2">${stats.map(stat => subjectCard(stat).replace('</h3>', `</h3><p class="small">${esc(stat.subject.description)}</p>`)).join('')}</div>
       ${renderCollectionTeaser()}
     `;
+  }
+
+  // Kleiner Pfeil oben links: zurück zur Übersicht.
+  function backArrow() {
+    return `<a class="back-arrow" href="#/" aria-label="Zurück zur Übersicht" title="Zurück zur Übersicht">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></a>`;
   }
 
   function renderCollectionTeaser() {
@@ -596,7 +603,7 @@
 
     return `
       <header class="page-head">
-        <p><a href="#/faecher">Fächer</a></p>
+        <div class="page-head-nav">${backArrow()}<a href="#/faecher" class="small">Fächer</a></div>
         <h1>${esc(subject.name)}</h1>
         <p>${esc(subject.description)}</p>
       </header>
@@ -678,7 +685,7 @@
     })).filter(s => s.entries.length > 0);
     return `
       <header class="page-head">
-        <p><a href="#/faecher">Fächer</a></p>
+        <div class="page-head-nav">${backArrow()}<a href="#/faecher" class="small">Fächer</a></div>
         <h1>Prüfungsfragen-Sammlung</h1>
         <p>Schriftliche Prüfungsfragen für den Fahrlehrerlehrgang BE – Fragen unverändert aus der Vorlage, Musterantworten recherchiert. Gleichlautende Fragen sind zusammengefasst; Fragen, die schon in der App stehen, sind verlinkt statt doppelt aufgenommen.</p>
       </header>
@@ -724,7 +731,7 @@
     // (der Thementitel kann sonst die Lösung verraten).
     const topicChip = (isSignCard(q) || q.collection === 'sammlung') && !reviewing ? '' : `<span class="chip">${esc(q.topic)}</span>`;
     const head = `
-      <div class="progress-meta"><span>${esc(practice.title)}</span><span>Frage ${practice.index + 1} von ${practice.queue.length}</span></div>
+      <div class="progress-meta"><span class="page-head-nav">${backArrow()}<span>${esc(practice.title)}</span></span><span>Frage ${practice.index + 1} von ${practice.queue.length}</span></div>
       ${bar(practice.index / practice.queue.length, 'thin')}
       <div class="card section">
         <div style="display:flex;gap:8px;flex-wrap:wrap">${subjectChip(q.subject)}${topicChip}<span class="chip">Schwierigkeit ${'●'.repeat(q.difficulty)}${'○'.repeat(3 - q.difficulty)}</span></div>
@@ -854,7 +861,7 @@
     const answered = new Set(results.map(r => r.questionId));
     const skipped = practice.queue.filter(id => !answered.has(id));
     return `
-      <header class="page-head"><h1>Übung abgeschlossen</h1><p>${esc(practice.title)}</p></header>
+      <header class="page-head"><div class="page-head-nav">${backArrow()}</div><h1>Übung abgeschlossen</h1><p>${esc(practice.title)}</p></header>
       <div class="card">
         ${results.length ? `<div class="kpi-label">Durchschnitt dieser Runde</div>
         <div class="kpi-value">${pct(avg)}</div>
@@ -1299,21 +1306,14 @@
     },
     'practice-ids': el => startPractice(el.dataset.ids.split(','), el.dataset.title || 'Wiederholung'),
     'practice-signs': el => {
-      const ts = now();
       const group = SIGN_GROUPS.find(g => g.id === el.dataset.group) || null;
       const pool = group ? signs.filter(item => signGroup(item) === group) : signs;
-      // Erst mischen, dann stabil nach Wissensstand sortieren: Schwächste zuerst, Gleichstand in Zufallsreihenfolge.
-      const shuffled = pool.slice();
-      for (let i = shuffled.length - 1; i > 0; i--) {
+      // Alle Zeichen der Auswahl in jedes Mal neuer Zufallsreihenfolge (Fisher-Yates).
+      const ordered = pool.slice();
+      for (let i = ordered.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
-        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        [ordered[i], ordered[j]] = [ordered[j], ordered[i]];
       }
-      const level = item => {
-        const m = Core.questionMastery(state.attempts[item.id], ts);
-        return m === null ? 0.4 : m;
-      };
-      const ordered = shuffled.sort((a, b) => level(a) - level(b));
-      // Alle Zeichen der Auswahl (schwächste zuerst); mit „Überspringen“/„Zurück“ frei navigierbar.
       startPractice(ordered.map(item => item.id), group ? `Zeichen-Training – ${group.label}` : 'Verkehrszeichen-Training');
     },
     mic: el => {

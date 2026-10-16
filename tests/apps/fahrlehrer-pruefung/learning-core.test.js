@@ -109,6 +109,23 @@ function runTests() {
     assert.ok(Core.evaluateAnswer(classes, 'Klasse BE für Anhänger').covered.includes('BE'));
   }));
 
+  results.push(test('signs need no paragraph references and wait signs are Vorschriftzeichen', () => {
+    for (const item of data.signs) {
+      for (const point of item.keyPoints) {
+        assert.ok(!/^(?:\d+\.\s*)?§/.test(point.label), `${item.id} key point is a paragraph reference`);
+        assert.ok(point.keywords.every(word => !word.includes('§')), `${item.id} expects a paragraph`);
+      }
+      assert.ok(!/\(Anlage \d\)|§ 40 Absatz/.test(item.category), `${item.id} category still cites the law`);
+    }
+    for (const id of ['vz-205', 'vz-206', 'vz-208']) {
+      const sign = data.questions.find(x => x.id === id);
+      assert.ok(sign.category.startsWith('Vorschriftzeichen'), `${id} category`);
+      const wrong = Core.evaluateAnswer(sign, 'Das ist ein Vorrangzeichen.').wrong;
+      assert.ok(wrong.some(label => label.includes('Vorschriftzeichen')), `${id} flags Vorrangzeichen`);
+      assert.deepStrictEqual(Core.evaluateAnswer(sign, 'Ein Vorschriftzeichen, kein Vorrangzeichen.').wrong, []);
+    }
+  }));
+
   results.push(test('wrong claims are detected unless negated', () => {
     const stop = q('vz-206');
     const wrong = Core.evaluateAnswer(stop, 'Stoppschild, Vorfahrt gewähren, langsames Durchrollen reicht.');

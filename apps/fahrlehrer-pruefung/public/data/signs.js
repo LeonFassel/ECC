@@ -127,7 +127,7 @@
       category: 'Vorschriftzeichen (Wartegebot)',
       explanation: 'Das auf der Spitze stehende Dreieck heißt: Andere haben Vorfahrt. Anhalten muss man nur, wenn es nötig ist.',
       example: 'Der Schüler bleibt am Zeichen 205 grundlos stehen, obwohl die Straße frei und einsehbar ist – üben Sie das zügige, aber vorsichtige Einfahren.',
-      modelAnswer: 'Das ist Zeichen 205 „Vorfahrt gewähren“. Wer ein Fahrzeug führt, muss Vorfahrt gewähren. Anhalten muss ich nur, wenn es die Verkehrslage erfordert; ich darf andere nicht gefährden oder wesentlich behindern. Bis zu 10 m vor dem Zeichen darf nicht gehalten werden, wenn es dadurch verdeckt wird. Es steht unmittelbar vor der Kreuzung und kann mit Entfernungsangabe angekündigt werden. Mit Zusatzzeichen kann es auch auf Radverkehr von links und rechts oder auf die Straßenbahn hinweisen.',
+      modelAnswer: 'Das ist Zeichen 205 „Vorfahrt gewähren“ – ein Vorschriftzeichen (Wartegebot), kein Vorrangzeichen. Wer ein Fahrzeug führt, muss Vorfahrt gewähren. Anhalten muss ich nur, wenn es die Verkehrslage erfordert; ich darf andere nicht gefährden oder wesentlich behindern. Bis zu 10 m vor dem Zeichen darf nicht gehalten werden, wenn es dadurch verdeckt wird. Es steht unmittelbar vor der Kreuzung und kann mit Entfernungsangabe angekündigt werden. Mit Zusatzzeichen kann es auch auf Radverkehr von links und rechts oder auf die Straßenbahn hinweisen.',
       keyPoints: [
         { label: 'Name: Vorfahrt gewähren', keywords: ['vorfahrt gewähren', '205', 'vorfahrt achten'] },
         { label: 'Anhalten nur wenn nötig', keywords: ['wenn nötig', 'erforderlich', 'nur wenn', 'bei bedarf', 'nicht zwingend'] },
@@ -145,7 +145,7 @@
       category: 'Vorschriftzeichen (Wartegebot)',
       explanation: 'Das Stoppschild heißt: immer vollständig anhalten – auch wenn frei ist – und dann Vorfahrt gewähren.',
       example: 'Typischer Prüfungsfehler: Rollen über die Haltlinie. Üben Sie bewusst den Stillstand der Räder an der Haltlinie und danach das Vortasten zur Sichtlinie.',
-      modelAnswer: 'Das ist Zeichen 206 „Halt. Vorfahrt gewähren.“, das Stoppschild. Wer ein Fahrzeug führt, muss anhalten und Vorfahrt gewähren – das Anhalten ist immer Pflicht, auch wenn die Straße frei ist. Angehalten wird an der Haltlinie (Zeichen 294); ist keine vorhanden, dort, wo die andere Straße zu übersehen ist. Bis zu 10 m vor dem Zeichen darf nicht gehalten werden, wenn es dadurch verdeckt wird. Es ist achteckig, damit es auch von hinten oder verschmutzt erkannt wird, und wird an unübersichtlichen oder gefährlichen Kreuzungen aufgestellt.',
+      modelAnswer: 'Das ist Zeichen 206 „Halt. Vorfahrt gewähren.“, das Stoppschild – ein Vorschriftzeichen (Haltgebot), kein Vorrangzeichen. Wer ein Fahrzeug führt, muss anhalten und Vorfahrt gewähren – das Anhalten ist immer Pflicht, auch wenn die Straße frei ist. Angehalten wird an der Haltlinie (Zeichen 294); ist keine vorhanden, dort, wo die andere Straße zu übersehen ist. Bis zu 10 m vor dem Zeichen darf nicht gehalten werden, wenn es dadurch verdeckt wird. Es ist achteckig, damit es auch von hinten oder verschmutzt erkannt wird, und wird an unübersichtlichen oder gefährlichen Kreuzungen aufgestellt.',
       keyPoints: [
         { label: 'Name: Halt. Vorfahrt gewähren / Stoppschild', keywords: ['stopp', 'stop', 'halt. vorfahrt', '206', 'halt vorfahrt'] },
         { label: 'Immer anhalten (Stillstand)', keywords: ['immer anhalten', 'anhalten', 'stillstand', 'stehen bleiben'] },

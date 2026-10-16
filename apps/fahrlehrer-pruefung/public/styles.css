@@ -408,3 +408,23 @@ th { color: var(--muted); font-weight: 650; border-top: 0; }
 /* ------------------------------------------------------------- Übungs-Navigation */
 .practice-nav { justify-content: space-between; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); }
 .mic-keyboard-hint { margin-top: 6px; }
+
+/* ------------------------------------------------------------- Zurück-Pfeil */
+.page-head-nav { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.page-head .page-head-nav a.small { color: var(--muted); }
+.progress-meta .page-head-nav { margin-bottom: 0; }
+.back-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex: none;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+.back-arrow svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.back-arrow:hover { border-color: var(--primary); color: var(--primary); }
+.back-arrow:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
