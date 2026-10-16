@@ -643,8 +643,9 @@
 
     const q = questionById.get(practice.queue[practice.index]);
     const reviewing = practice.phase !== 'answer';
-    // Bei Verkehrszeichen bleibt der Name verborgen, bis die Antwort abgegeben ist.
-    const topicChip = isSignCard(q) && !reviewing ? '' : `<span class="chip">${esc(q.topic)}</span>`;
+    // Bei Verkehrszeichen und Sammlungsfragen bleibt das Thema verborgen, bis die Antwort abgegeben ist
+    // (der Thementitel kann sonst die Lösung verraten).
+    const topicChip = (isSignCard(q) || q.collection === 'sammlung') && !reviewing ? '' : `<span class="chip">${esc(q.topic)}</span>`;
     const head = `
       <div class="progress-meta"><span>${esc(practice.title)}</span><span>Frage ${practice.index + 1} von ${practice.queue.length}</span></div>
       ${bar(practice.index / practice.queue.length, 'thin')}
