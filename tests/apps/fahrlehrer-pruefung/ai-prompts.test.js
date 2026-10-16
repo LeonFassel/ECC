@@ -1,0 +1,74 @@
+/**
+ * Tests for apps/fahrlehrer-pruefung/public/core/ai-prompts.js
+ *
+ * Run with: node tests/apps/fahrlehrer-pruefung/ai-prompts.test.js
+ */
+
+const assert = require('assert');
+
+const Prompts = require('../../../apps/fahrlehrer-pruefung/public/core/ai-prompts');
+const data = require('../../../apps/fahrlehrer-pruefung/public/data/questions');
+
+function test(name, fn) {
+  try {
+    fn();
+    console.log(`  ✓ ${name}`);
+    return true;
+  } catch (err) {
+    console.log(`  ✗ ${name}`);
+    console.log(`    Error: ${err.message}`);
+    return false;
+  }
+}
+
+function runTests() {
+  console.log('\n=== Testing fahrlehrer-pruefung ai-prompts ===\n');
+  const results = [];
+  const sign = data.questions.find(q => q.id === 'vz-206');
+  const plain = data.questions.find(q => q.id === 'mp-04');
+
+  results.push(test('sign briefs tell the examiner the sign but hide it from the candidate', () => {
+    const brief = Prompts.questionBrief(sign);
+    assert.ok(brief.includes('Zeichen 206'));
+    assert.ok(brief.includes('Amtlicher Text (StVO)'));
+    assert.ok(brief.includes('sieht nur die Originalabbildung'));
+    assert.ok(brief.includes('Typische Fehler'));
+  }));
+
+  results.push(test('evaluation prompt contains instructions, answer and JSON format', () => {
+    const prompt = Prompts.evaluationPrompt(plain, 'Antwort <b>');
+    assert.ok(prompt.includes(Prompts.EVALUATION_SYSTEM));
+    assert.ok(prompt.includes('<antwort>\nAntwort <b>\n</antwort>'));
+    assert.ok(prompt.trim().endsWith(Prompts.EVALUATION_FORMAT));
+  }));
+
+  results.push(test('examiner messages start and end with a user turn and merge same roles', () => {
+    const msgs = Prompts.examinerMessages([plain], [
+      { role: 'examiner', text: 'Frage' },
+      { role: 'candidate', text: 'A' },
+      { role: 'candidate', text: 'B' },
+      { role: 'examiner', text: 'Nachfrage' }
+    ], 'LEAD');
+    assert.strictEqual(msgs[0].content, 'LEAD');
+    assert.deepStrictEqual(msgs.map(m => m.role), ['user', 'assistant', 'user', 'assistant', 'user']);
+    assert.ok(msgs[2].content.includes('A') && msgs[2].content.includes('B'));
+  }));
+
+  results.push(test('normalizers clamp scores and drop malformed fields', () => {
+    const ev = Prompts.normalizeEvaluation({ score: '1.4', covered: ['x', 3], errors: 'nope' });
+    assert.strictEqual(ev.score, 1);
+    assert.deepStrictEqual(ev.covered, ['x', '3']);
+    assert.deepStrictEqual(ev.errors, []);
+    const turn = Prompts.normalizeExaminerTurn({ message: 'Hallo', assessment: { completed: false }, finished: 0 });
+    assert.strictEqual(turn.assessment, null);
+    assert.strictEqual(turn.finished, false);
+    assert.deepStrictEqual(Prompts.normalizeExaminerTurn(null).message, '');
+  }));
+
+  const passed = results.filter(Boolean).length;
+  const failed = results.length - passed;
+  console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
+  process.exit(failed > 0 ? 1 : 0);
+}
+
+runTests();
