@@ -170,6 +170,21 @@
 
   const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition || null;
   let dictation = null;
+  // Ohne Mikrofonfreigabe (z. B. eingebettet auf claude.ai) startet die Browser-Spracherkennung nicht.
+  // Dann wird die Diktierfunktion der Handy-Tastatur genutzt.
+  let micBlocked = !SpeechRec || !microphoneAllowedByPolicy();
+  const START_TIMEOUT_MS = 2500;
+  const STOP_TIMEOUT_MS = 1200;
+  const KEYBOARD_HINT = 'Spracheingabe per Tastatur: Tippen Sie ins Antwortfeld und dann auf das Mikrofon-Symbol Ihrer Handy-Tastatur.';
+
+  function microphoneAllowedByPolicy() {
+    const policy = document.permissionsPolicy || document.featurePolicy;
+    try {
+      return !policy || typeof policy.allowsFeature !== 'function' || policy.allowsFeature('microphone');
+    } catch (_err) {
+      return true;
+    }
+  }
 
   const MIC_ERRORS = {
     'not-allowed': 'Kein Zugriff aufs Mikrofon. Tippen Sie stattdessen auf das Mikrofon Ihrer Handy-Tastatur, um zu diktieren.',
@@ -198,6 +213,39 @@
       <span>${active ? 'Aufnahme beenden' : 'Antwort einsprechen'}</span></button>`;
   }
 
+  function answerField(target) {
+    return document.getElementById(target === 'exam' ? 'exam-answer' : 'answer');
+  }
+
+  /** Fallback: Antwortfeld fokussieren, damit die Tastatur mit Diktierfunktion erscheint. */
+  function useKeyboardDictation(target, message) {
+    micBlocked = true;
+    const el = answerField(target);
+    if (el) {
+      el.focus();
+      const end = el.value.length;
+      if (typeof el.setSelectionRange === 'function') el.setSelectionRange(end, end);
+    }
+    const hint = document.querySelector('.mic-keyboard-hint');
+    if (hint) hint.hidden = false;
+    toast(message || KEYBOARD_HINT);
+  }
+
+  /** Beendet eine Aufnahme genau einmal – egal ob über onend, Fehler oder Zeitüberschreitung. */
+  function finishDictation(session) {
+    if (session.done) return;
+    session.done = true;
+    clearTimeout(session.startTimer);
+    clearTimeout(session.stopTimer);
+    if (dictation === session) dictation = null;
+    refreshMicButtons();
+    if (session.then) {
+      const then = session.then;
+      session.then = null;
+      then();
+    }
+  }
+
   function refreshMicButtons() {
     document.querySelectorAll('[data-action="mic"]').forEach(btn => {
       btn.outerHTML = micButton(btn.dataset.target);
@@ -207,21 +255,40 @@
   }
 
   function startDictation(target) {
-    if (!SpeechRec) {
-      toast('Spracheingabe wird in diesem Browser nicht unterstützt. Tippen Sie auf das Mikrofon Ihrer Tastatur, um zu diktieren.');
-      const el = document.getElementById(target === 'exam' ? 'exam-answer' : 'answer');
-      if (el) el.focus();
+    if (micBlocked) {
+      useKeyboardDictation(target);
       return;
     }
     stopDictation();
-    const recognition = new SpeechRec();
+    let recognition;
+    try {
+      recognition = new SpeechRec();
+    } catch (_err) {
+      useKeyboardDictation(target);
+      return;
+    }
     recognition.lang = 'de-DE';
     recognition.continuous = true;
     recognition.interimResults = true;
-    const session = { target, recognition, base: draftOf(target).trim(), finalText: '', stopping: false, then: null };
+    const session = { target, recognition, base: draftOf(target).trim(), finalText: '', stopping: false, started: false, done: false, then: null };
     dictation = session;
 
+    const markStarted = () => {
+      session.started = true;
+      clearTimeout(session.startTimer);
+    };
+    recognition.onstart = markStarted;
+    recognition.onaudiostart = markStarted;
+    // Startet die Erkennung nicht (kein Mikrofonzugriff), nicht hängen bleiben: auf Tastatur-Diktat umschalten.
+    session.startTimer = setTimeout(() => {
+      if (session.started || session.done) return;
+      try { recognition.abort(); } catch (_err) { /* bereits beendet */ }
+      finishDictation(session);
+      useKeyboardDictation(target, 'Das Mikrofon ist hier nicht freigegeben. ' + KEYBOARD_HINT);
+    }, START_TIMEOUT_MS);
+
     recognition.onresult = event => {
+      markStarted();
       let interim = '';
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const result = event.results[i];
@@ -231,18 +298,20 @@
       setDraft(target, [session.base, session.finalText.trim(), interim.trim()].filter(Boolean).join(' '));
     };
     recognition.onerror = event => {
+      if (event.error === 'not-allowed' || event.error === 'service-not-allowed' || event.error === 'audio-capture') {
+        finishDictation(session);
+        useKeyboardDictation(target, MIC_ERRORS[event.error]);
+        return;
+      }
       if (MIC_ERRORS[event.error]) toast(MIC_ERRORS[event.error]);
     };
-    recognition.onend = () => {
-      if (dictation === session) dictation = null;
-      refreshMicButtons();
-      if (session.then) session.then();
-    };
+    recognition.onend = () => finishDictation(session);
     try {
       recognition.start();
     } catch (_err) {
-      dictation = null;
-      toast(MIC_ERRORS['not-allowed']);
+      finishDictation(session);
+      useKeyboardDictation(target, MIC_ERRORS['not-allowed']);
+      return;
     }
     refreshMicButtons();
   }
@@ -253,14 +322,21 @@
       if (then) then();
       return;
     }
-    dictation.stopping = true;
-    dictation.then = then || null;
+    const session = dictation;
+    session.stopping = true;
+    session.then = then || null;
+    // Nicht gestartete Aufnahme sofort beenden; sonst kurz auf die letzten Wörter warten, aber nie hängen bleiben.
+    if (!session.started) {
+      try { session.recognition.abort(); } catch (_err) { /* bereits beendet */ }
+      finishDictation(session);
+      return;
+    }
+    session.stopTimer = setTimeout(() => finishDictation(session), STOP_TIMEOUT_MS);
     try {
-      dictation.recognition.stop();
+      session.recognition.stop();
     } catch (_err) {
-      const session = dictation;
-      dictation = null;
-      if (session.then) session.then();
+      finishDictation(session);
+      return;
     }
     refreshMicButtons();
   }
@@ -270,7 +346,8 @@
         ${micButton(target)}
         <button class="btn primary" data-action="${submitAction}">${submitLabel}</button>
       </div>
-      <p class="small muted mic-status" ${dictation && !dictation.stopping ? '' : 'hidden'}>Sprechen Sie jetzt – der Text erscheint im Feld. Mit „${submitLabel}“ wird die Aufnahme beendet und ausgewertet.</p>`;
+      <p class="small muted mic-status" ${dictation && !dictation.stopping ? '' : 'hidden'}>Sprechen Sie jetzt – der Text erscheint im Feld. Mit „${submitLabel}“ wird die Aufnahme beendet und ausgewertet.</p>
+      <p class="small muted mic-keyboard-hint" ${micBlocked ? '' : 'hidden'}>${esc(KEYBOARD_HINT)}</p>`;
   }
 
   function isSignCard(q) {
@@ -660,6 +737,7 @@
         <textarea id="answer" data-input="answer" placeholder="Formulieren Sie Ihre Antwort in ganzen Sätzen …">${esc(practice.answer)}</textarea>
         ${answerTools('practice', 'submit-answer', 'Antwort prüfen')}
         <div class="btn-row" style="margin-top:6px"><button class="btn" data-action="reveal">Weiß ich nicht – Lösung zeigen</button></div>
+        ${practiceNav()}
       </div>`;
     }
 
@@ -683,7 +761,43 @@
           <button class="btn warn" data-action="rate" data-score="0.5">Teilweise</button>
           <button class="btn bad" data-action="rate" data-score="0">Nicht gewusst</button>
         </div>
+        ${practiceNav()}
       </div>`;
+  }
+
+  // Zurück zur vorigen Frage oder diese Frage ohne Bewertung überspringen.
+  function practiceNav() {
+    const multi = practice.queue.length > 1;
+    if (!multi) return '';
+    const isLast = practice.index >= practice.queue.length - 1;
+    return `<div class="btn-row practice-nav">
+        <button class="btn" data-action="practice-prev" ${practice.index === 0 ? 'disabled' : ''}>‹ Zurück</button>
+        <button class="btn" data-action="practice-skip">${isLast ? 'Überspringen und beenden' : 'Überspringen ›'}</button>
+      </div>`;
+  }
+
+  function resetPracticeAnswer() {
+    practice.phase = 'answer';
+    practice.answer = '';
+    practice.auto = null;
+    practice.ai = null;
+    practice.aiError = null;
+    practice.aiLoading = false;
+  }
+
+  function moveInPractice(step) {
+    stopDictation();
+    const target = practice.index + step;
+    if (target < 0) return;
+    if (step < 0) {
+      // Die vorige Frage wird neu beantwortet; ihr Rundenergebnis zählt dann neu.
+      const id = practice.queue[target];
+      practice.results = practice.results.filter(r => r.questionId !== id);
+    }
+    practice.index = Math.min(target, practice.queue.length);
+    resetPracticeAnswer();
+    render();
+    window.scrollTo(0, 0);
   }
 
   // Belege der Musterantwort; nur http(s)-Links werden verlinkt.
@@ -737,18 +851,22 @@
     const results = practice.results;
     const avg = results.length ? results.reduce((a, r) => a + r.score, 0) / results.length : 0;
     const weak = results.filter(r => r.score < 0.6).map(r => r.questionId);
+    const answered = new Set(results.map(r => r.questionId));
+    const skipped = practice.queue.filter(id => !answered.has(id));
     return `
       <header class="page-head"><h1>Übung abgeschlossen</h1><p>${esc(practice.title)}</p></header>
       <div class="card">
-        <div class="kpi-label">Durchschnitt dieser Runde</div>
+        ${results.length ? `<div class="kpi-label">Durchschnitt dieser Runde</div>
         <div class="kpi-value">${pct(avg)}</div>
-        ${bar(avg, tone(avg))}
+        ${bar(avg, tone(avg))}` : '<p class="muted">In dieser Runde wurde keine Frage bewertet.</p>'}
+        ${skipped.length ? `<p class="small muted" style="margin-top:10px">Übersprungen: ${skipped.length} ${skipped.length === 1 ? 'Frage' : 'Fragen'}</p>` : ''}
         <ul class="list" style="margin-top:12px">${results.map(r => {
           const q = questionById.get(r.questionId);
           return `<li><div><a href="#/frage/${esc(q.id)}">${esc(q.topic)}</a><div class="small muted">${esc(subjectById.get(q.subject).name)}</div></div><span class="chip ${tone(r.score) === 'good' ? 'sicher' : tone(r.score) === 'warn' ? 'mittel' : 'schwach'}">${pct(r.score)}</span></li>`;
         }).join('')}</ul>
         <div class="btn-row">
           ${weak.length ? `<button class="btn primary" data-action="practice-ids" data-ids="${esc(weak.join(','))}">Schwache Fragen wiederholen</button>` : ''}
+          ${skipped.length ? `<button class="btn ${weak.length ? '' : 'primary'}" data-action="practice-ids" data-title="Übersprungene Fragen" data-ids="${esc(skipped.join(','))}">Übersprungene Fragen üben</button>` : ''}
           <a class="btn" href="#/">Zur Übersicht</a>
           <a class="btn" href="#/analyse">Analyse ansehen</a>
         </div>
@@ -799,14 +917,10 @@
     const source = ai ? 'ai' : auto ? 'auto' : 'self';
     state = Core.recordAttempt(state, q.id, { score, source, missed: selfScore >= 1 && !auto ? [] : missed }, now());
     saveState();
+    practice.results = practice.results.filter(r => r.questionId !== q.id);
     practice.results.push({ questionId: q.id, score });
     practice.index += 1;
-    practice.phase = 'answer';
-    practice.answer = '';
-    practice.auto = null;
-    practice.ai = null;
-    practice.aiError = null;
-    practice.aiLoading = false;
+    resetPracticeAnswer();
     render();
     app.focus();
   }
@@ -1200,7 +1314,9 @@
       else startDictation(el.dataset.target);
     },
     'submit-answer': () => stopDictation(() => submitAnswer(false)),
-    reveal: () => submitAnswer(true),
+    reveal: () => stopDictation(() => submitAnswer(true)),
+    'practice-prev': () => moveInPractice(-1),
+    'practice-skip': () => moveInPractice(1),
     'ai-evaluate': () => requestAiEvaluation(),
     rate: el => rate(Number(el.dataset.score)),
     'exam-start': startExam,

@@ -404,3 +404,7 @@ th { color: var(--muted); font-weight: 650; border-top: 0; }
 .figure-grid figure:only-child img { max-height: 360px; }
 .sources { margin: 4px 0 0; padding-left: 18px; }
 .sources a { word-break: break-word; }
+
+/* ------------------------------------------------------------- Übungs-Navigation */
+.practice-nav { justify-content: space-between; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); }
+.mic-keyboard-hint { margin-top: 6px; }
