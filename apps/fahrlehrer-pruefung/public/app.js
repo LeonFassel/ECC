@@ -517,7 +517,7 @@
         <div>
           <h2>Verkehrszeichen-Training</h2>
           <p class="muted">${signs.length} Zeichen als Bild: Sehen, mündlich erklären, Rückmeldung erhalten, was richtig und was falsch war.</p>
-          <div class="btn-row"><button class="btn primary" data-action="practice-signs">Zeichen-Training starten</button></div>
+          <div class="btn-row"><button class="btn primary" data-action="practice-signs">Zeichen-Training starten (alle ${signs.length})</button></div>
         </div>
       </div>
 
@@ -614,7 +614,7 @@
           <h2>Üben</h2>
           <p class="muted small">Beantworten Sie die Fragen zuerst frei – danach sehen Sie Bewertung, Erklärung und Musterantwort.</p>
           <div class="btn-row">
-            ${id === 'zeichen' ? '<button class="btn primary" data-action="practice-signs">Zeichen-Training mit Bildern</button>' : ''}
+            ${id === 'zeichen' ? `<button class="btn primary" data-action="practice-signs">Zeichen-Training mit Bildern (alle ${signs.length})</button>` : ''}
             <button class="btn ${id === 'zeichen' ? '' : 'primary'}" data-action="practice-subject" data-subject="${esc(id)}">Alle Fragen üben</button>
             <button class="btn" data-action="practice-subject-weak" data-subject="${esc(id)}" ${stat.levels.schwach + stat.levels.mittel === 0 ? 'disabled' : ''}>Nur Schwächen</button>
             ${collection.length ? `<button class="btn" data-action="practice-ids" data-title="${esc(subject.name)} – Prüfungsfragen-Sammlung" data-ids="${esc(collection.map(q => q.id).join(','))}">Sammlungsfragen (${collection.length})</button>` : ''}
@@ -1302,12 +1302,19 @@
       const ts = now();
       const group = SIGN_GROUPS.find(g => g.id === el.dataset.group) || null;
       const pool = group ? signs.filter(item => signGroup(item) === group) : signs;
-      const ordered = pool.slice().sort((a, b) => {
-        const ma = Core.questionMastery(state.attempts[a.id], ts);
-        const mb = Core.questionMastery(state.attempts[b.id], ts);
-        return (ma === null ? 0.4 : ma) - (mb === null ? 0.4 : mb) || Math.random() - 0.5;
-      });
-      startPractice(ordered.slice(0, 10).map(item => item.id), group ? `Zeichen-Training – ${group.label}` : 'Verkehrszeichen-Training');
+      // Erst mischen, dann stabil nach Wissensstand sortieren: Schwächste zuerst, Gleichstand in Zufallsreihenfolge.
+      const shuffled = pool.slice();
+      for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+      }
+      const level = item => {
+        const m = Core.questionMastery(state.attempts[item.id], ts);
+        return m === null ? 0.4 : m;
+      };
+      const ordered = shuffled.sort((a, b) => level(a) - level(b));
+      // Alle Zeichen der Auswahl (schwächste zuerst); mit „Überspringen“/„Zurück“ frei navigierbar.
+      startPractice(ordered.map(item => item.id), group ? `Zeichen-Training – ${group.label}` : 'Verkehrszeichen-Training');
     },
     mic: el => {
       if (dictation && dictation.target === el.dataset.target && !dictation.stopping) stopDictation();
