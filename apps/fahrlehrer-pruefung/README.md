@@ -52,11 +52,27 @@ die das Grundgerüst selbst ergänzen.
 Den Fortschritt übertragen Sie zwischen Geräten über *Einstellungen →
 Sicherungscode anzeigen* und *Sicherungscode einfügen*.
 
+## Passwortgeschützte Website (z. B. für Safari mit Mikrofon)
+
+```bash
+FL_SITE_PASSWORD='…' node apps/fahrlehrer-pruefung/build-site.js
+```
+
+Das schreibt nach `docs/fahrlehrer/` eine kleine Startseite (`index.html`) und
+die komplette App verschlüsselt (`app.bin`, AES-GCM, Schlüssel per PBKDF2 aus
+dem Passwort). Im Repository stehen damit keine lesbaren Fragen; erst nach
+Eingabe des Passworts entschlüsselt der Browser die App. Das Passwort wird nie
+in eine Datei geschrieben. Mit GitHub Pages (Quelle: Branch, Ordner `/docs`)
+ist die App dann unter `https://<nutzer>.github.io/<repo>/fahrlehrer/`
+erreichbar; dort darf sie das Mikrofon direkt nutzen.
+
 ## Spracheingabe
 
 „Antwort einsprechen“ nutzt die eingebaute Spracherkennung des Browsers
 (Web Speech API, Deutsch). Sie funktioniert z. B. in Chrome, Edge und Safari,
-wenn die Seite über `localhost` oder HTTPS geöffnet wird. Wo die Seite keinen
+wenn die Seite über `localhost` oder HTTPS geöffnet wird. Auf dem iPhone muss
+dafür die Diktierfunktion eingeschaltet sein; Safari fragt beim ersten Mal nach
+der Mikrofon-Erlaubnis. Wo die Seite keinen
 Mikrofonzugriff bekommt (etwa als eingebettete Seite), diktieren Sie über die
 Mikrofon-Taste der Handy-Tastatur direkt ins Antwortfeld.
 
@@ -102,6 +118,7 @@ in der Grundversion.
 apps/fahrlehrer-pruefung/
   server.js                 Statischer Server + KI-Endpunkte
   build-standalone.js       Baut die App als eine einzige HTML-Datei
+  build-site.js             Baut die passwortgeschützte Website (docs/fahrlehrer)
   lib/ai-examiner.js        Claude-Requests (Bewertung, Prüfer), Antwortprüfung
   public/index.html         App-Hülle mit Navigation
   public/app.js             Oberfläche (Views, Übung, Prüfung, Analyse)

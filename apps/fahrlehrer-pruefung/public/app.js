@@ -173,7 +173,8 @@
   // Ohne Mikrofonfreigabe (z. B. eingebettet auf claude.ai) startet die Browser-Spracherkennung nicht.
   // Dann wird die Diktierfunktion der Handy-Tastatur genutzt.
   let micBlocked = !SpeechRec || !microphoneAllowedByPolicy();
-  const START_TIMEOUT_MS = 2500;
+  // Großzügig, weil Safari beim ersten Mal nach der Mikrofon-Erlaubnis fragt.
+  const START_TIMEOUT_MS = 10000;
   const STOP_TIMEOUT_MS = 1200;
   const KEYBOARD_HINT = 'Spracheingabe per Tastatur: Tippen Sie ins Antwortfeld und dann auf das Mikrofon-Symbol Ihrer Handy-Tastatur.';
 
@@ -187,8 +188,8 @@
   }
 
   const MIC_ERRORS = {
-    'not-allowed': 'Kein Zugriff aufs Mikrofon. Tippen Sie stattdessen auf das Mikrofon Ihrer Handy-Tastatur, um zu diktieren.',
-    'service-not-allowed': 'Spracheingabe ist hier nicht erlaubt. Nutzen Sie das Mikrofon Ihrer Handy-Tastatur.',
+    'not-allowed': 'Kein Zugriff aufs Mikrofon. In Safari: Symbol „aA“ in der Adressleiste → Website-Einstellungen → Mikrofon erlauben und Seite neu laden. Bis dahin hilft das Mikrofon der Handy-Tastatur.',
+    'service-not-allowed': 'Spracherkennung ist nicht verfügbar. Auf dem iPhone muss „Diktierfunktion“ eingeschaltet sein (Einstellungen → Allgemein → Tastatur). Bis dahin hilft das Mikrofon der Handy-Tastatur.',
     'audio-capture': 'Kein Mikrofon gefunden.',
     'no-speech': 'Nichts gehört – bitte noch einmal versuchen.',
     network: 'Die Spracherkennung braucht eine Internetverbindung.'
@@ -217,9 +218,12 @@
     return document.getElementById(target === 'exam' ? 'exam-answer' : 'answer');
   }
 
-  /** Fallback: Antwortfeld fokussieren, damit die Tastatur mit Diktierfunktion erscheint. */
-  function useKeyboardDictation(target, message) {
-    micBlocked = true;
+  /**
+   * Fallback: Antwortfeld fokussieren, damit die Tastatur mit Diktierfunktion erscheint.
+   * `block` schaltet die Browser-Spracherkennung für diesen Seitenaufruf ab (Mikrofon verweigert).
+   */
+  function useKeyboardDictation(target, message, block) {
+    if (block) micBlocked = true;
     const el = answerField(target);
     if (el) {
       el.focus();
@@ -264,7 +268,7 @@
     try {
       recognition = new SpeechRec();
     } catch (_err) {
-      useKeyboardDictation(target);
+      useKeyboardDictation(target, KEYBOARD_HINT, true);
       return;
     }
     recognition.lang = 'de-DE';
@@ -284,7 +288,7 @@
       if (session.started || session.done) return;
       try { recognition.abort(); } catch (_err) { /* bereits beendet */ }
       finishDictation(session);
-      useKeyboardDictation(target, 'Das Mikrofon ist hier nicht freigegeben. ' + KEYBOARD_HINT);
+      useKeyboardDictation(target, 'Die Spracherkennung ist nicht gestartet. Bitte erneut auf „Antwort einsprechen“ tippen. ' + KEYBOARD_HINT);
     }, START_TIMEOUT_MS);
 
     recognition.onresult = event => {
@@ -300,7 +304,7 @@
     recognition.onerror = event => {
       if (event.error === 'not-allowed' || event.error === 'service-not-allowed' || event.error === 'audio-capture') {
         finishDictation(session);
-        useKeyboardDictation(target, MIC_ERRORS[event.error]);
+        useKeyboardDictation(target, MIC_ERRORS[event.error], true);
         return;
       }
       if (MIC_ERRORS[event.error]) toast(MIC_ERRORS[event.error]);
@@ -310,7 +314,7 @@
       recognition.start();
     } catch (_err) {
       finishDictation(session);
-      useKeyboardDictation(target, MIC_ERRORS['not-allowed']);
+      useKeyboardDictation(target, MIC_ERRORS['not-allowed'], true);
       return;
     }
     refreshMicButtons();
