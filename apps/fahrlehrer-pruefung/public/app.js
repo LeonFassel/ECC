@@ -700,8 +700,24 @@
 
   // ------------------------------------------------------------------ Üben
 
-  function startPractice(ids, title) {
-    const queue = ids.filter(id => questionById.has(id));
+  /** Gleichverteilte Zufallsreihenfolge (Fisher-Yates); das Original bleibt unverändert. */
+  function shuffled(list) {
+    const copy = list.slice();
+    for (let i = copy.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [copy[i], copy[j]] = [copy[j], copy[i]];
+    }
+    return copy;
+  }
+
+  /**
+   * Startet eine Übungsrunde. Fragen kommen in jedes Mal neuer Zufallsreihenfolge;
+   * nur der Tagesplan behält seine Priorisierung (`keepOrder`).
+   */
+  function startPractice(ids, title, options) {
+    const keepOrder = Boolean(options && options.keepOrder);
+    const valid = Array.from(new Set(ids)).filter(id => questionById.has(id));
+    const queue = keepOrder ? valid : shuffled(valid);
     if (queue.length === 0) {
       toast('Keine passenden Fragen gefunden.');
       return;
@@ -1284,7 +1300,7 @@
   const actions = {
     'start-daily': () => {
       const plan = Core.dailyPlan(window.FLData, state, now());
-      startPractice(plan.items.map(i => i.questionId), 'Tagesplan');
+      startPractice(plan.items.map(i => i.questionId), 'Tagesplan', { keepOrder: true });
     },
     'practice-subject': el => {
       startPractice(questions.filter(q => q.subject === el.dataset.subject).map(q => q.id), subjectById.get(el.dataset.subject).name);
@@ -1308,13 +1324,8 @@
     'practice-signs': el => {
       const group = SIGN_GROUPS.find(g => g.id === el.dataset.group) || null;
       const pool = group ? signs.filter(item => signGroup(item) === group) : signs;
-      // Alle Zeichen der Auswahl in jedes Mal neuer Zufallsreihenfolge (Fisher-Yates).
-      const ordered = pool.slice();
-      for (let i = ordered.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [ordered[i], ordered[j]] = [ordered[j], ordered[i]];
-      }
-      startPractice(ordered.map(item => item.id), group ? `Zeichen-Training – ${group.label}` : 'Verkehrszeichen-Training');
+      // Alle Zeichen der Auswahl; startPractice mischt die Reihenfolge bei jedem Start neu.
+      startPractice(pool.map(item => item.id), group ? `Zeichen-Training – ${group.label}` : 'Verkehrszeichen-Training');
     },
     mic: el => {
       if (dictation && dictation.target === el.dataset.target && !dictation.stopping) stopDictation();
