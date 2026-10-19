@@ -4,6 +4,7 @@
 
   const Core = window.FLCore;
   const Prompts = window.FLPrompts;
+  const Requests = window.FLAiRequests;
   const { subjects, questions, signs } = window.FLData;
   const STORAGE_KEY = 'fl-pruefung-state-v1';
   const questionById = new Map(questions.map(q => [q.id, q]));
@@ -13,6 +14,8 @@
   let state = loadState();
   let aiStatus = { ai: false, mode: null, model: null };
   let sampleFn = null;
+  let apiService = null;
+  const API_KEY_STORE = 'fl-anthropic-api-key';
   let practice = null;
   let exam = null;
   let lastRoute = '';
@@ -109,8 +112,46 @@
   }
 
   // ------------------------------------------------------------------ KI-Anbindung
-  // Zwei Wege: der eigene Server (Claude API mit Schlüssel) oder – als gehostete
-  // Seite auf claude.ai – Claude über das Konto der Person, die die Seite öffnet.
+  // Drei Wege: der eigene Server (Claude API mit Schlüssel), als gehostete Seite auf
+  // claude.ai Claude über das Konto der Person, die die Seite öffnet, oder – auf der
+  // Website – die Claude API direkt aus dem Browser mit einem eigenen API-Schlüssel.
+
+  /** Anthropic-SDK, das nur in die Website-Version eingebunden wird (build-site.js). */
+  function browserSdk() {
+    return typeof window.FLAnthropic === 'function' ? window.FLAnthropic : null;
+  }
+
+  function storedApiKey() {
+    try {
+      return window.localStorage.getItem(API_KEY_STORE) || '';
+    } catch (_err) {
+      return '';
+    }
+  }
+
+  function connectApiKey(key) {
+    const Sdk = browserSdk();
+    if (!Sdk || !Requests || !key) {
+      apiService = null;
+      return false;
+    }
+    apiService = Requests.createAiService(new Sdk({ apiKey: key, dangerouslyAllowBrowser: true }));
+    aiStatus = { ai: true, mode: 'apikey', model: Requests.DEFAULT_MODEL };
+    return true;
+  }
+
+  function apiErrorMessage(err) {
+    if (err && err.name === 'AiResponseError') return err.message;
+    const status = err && err.status;
+    const text = String((err && err.message) || '');
+    if (status === 401) return 'Der API-Schlüssel ist ungültig. Bitte unter Einstellungen prüfen.';
+    if (status === 403) return 'Der API-Schlüssel hat keine Berechtigung für diese Anfrage.';
+    if (status === 400 && /credit balance/i.test(text)) return 'Das Guthaben Ihres Anthropic-Kontos ist aufgebraucht. Bitte in der Anthropic Console aufladen.';
+    if (status === 429) return 'Gerade zu viele KI-Anfragen. Bitte in einem Moment erneut versuchen.';
+    if (status === 529 || status >= 500) return 'Die KI ist gerade überlastet. Bitte erneut versuchen.';
+    if (!status) return 'Keine Verbindung zur KI. Bitte Internetverbindung prüfen.';
+    return 'Die KI-Anfrage ist fehlgeschlagen. Bitte erneut versuchen.';
+  }
 
   async function checkAi() {
     try {
@@ -130,6 +171,7 @@
         sampleFn = null;
       }
     }
+    if (!aiStatus.ai) connectApiKey(storedApiKey());
     render();
   }
 
@@ -148,6 +190,13 @@
 
   async function aiEvaluate(question, answer) {
     if (aiStatus.mode === 'server') return postJson('api/evaluate', { questionId: question.id, answer });
+    if (aiStatus.mode === 'apikey') {
+      try {
+        return await apiService.evaluate(question, answer);
+      } catch (err) {
+        throw new Error(apiErrorMessage(err));
+      }
+    }
     try {
       return Prompts.normalizeEvaluation(await sampleFn.json(Prompts.evaluationPrompt(question, answer)));
     } catch (err) {
@@ -158,6 +207,13 @@
   async function aiExamine(ids, history) {
     if (aiStatus.mode === 'server') return postJson('api/examiner', { questionIds: ids, history });
     const list = ids.map(id => questionById.get(id)).filter(Boolean);
+    if (aiStatus.mode === 'apikey') {
+      try {
+        return await apiService.examine(list, history);
+      } catch (err) {
+        throw new Error(apiErrorMessage(err));
+      }
+    }
     const lead = `${Prompts.EXAMINER_SYSTEM}\n\n${Prompts.EXAMINER_FORMAT}\n\n${Prompts.examinerPlan(list)}`;
     try {
       return Prompts.normalizeExaminerTurn(await sampleFn.json(Prompts.examinerMessages(list, history, lead), { cache: false }));
@@ -1220,12 +1276,15 @@
       <div class="card">
         <h2>KI-Funktionen</h2>
         ${aiStatus.ai
-          ? `<div class="panel good"><p><strong>Aktiv${aiStatus.mode === 'sample' ? ' über Ihr Claude-Konto' : ''}.</strong> Antworten werden zusätzlich von der KI bewertet, und der KI-Prüfer steht zur Verfügung.</p></div>`
+          ? `<div class="panel good"><p><strong>Aktiv${aiStatus.mode === 'sample' ? ' über Ihr Claude-Konto' : aiStatus.mode === 'apikey' ? ' mit Ihrem API-Schlüssel' : ''}.</strong> Antworten werden zusätzlich von der KI bewertet, und der KI-Prüfer steht zur Verfügung.</p></div>`
           : `<div class="panel warn"><p><strong>Nicht aktiv.</strong> Die App läuft in der Grundversion mit lokaler Bewertung.
-              ${aiStatus.declined ? 'Die KI wurde für diese Seite nicht freigegeben; beim nächsten Öffnen fragt Claude erneut.' : 'Öffnen Sie die App über claude.ai oder starten Sie den Server mit einem <code>ANTHROPIC_API_KEY</code> (siehe README).'}</p></div>`}
+              ${aiStatus.declined ? 'Die KI wurde für diese Seite nicht freigegeben; beim nächsten Öffnen fragt Claude erneut.' : browserSdk() ? 'Hinterlegen Sie unten Ihren Anthropic-API-Schlüssel, um die KI-Bewertung einzuschalten.' : 'Öffnen Sie die App über claude.ai oder starten Sie den Server mit einem <code>ANTHROPIC_API_KEY</code> (siehe README).'}</p></div>`}
         <p class="small muted">${aiStatus.mode === 'sample'
           ? 'Für die KI-Bewertung werden Ihre Antworttexte an Claude gesendet und zählen zu Ihrer Claude-Nutzung.'
-          : 'Für die KI-Bewertung werden Ihre Antworttexte an den Server und von dort an die Claude API übermittelt.'}</p>
+          : aiStatus.mode === 'apikey' || browserSdk()
+            ? 'Für die KI-Bewertung werden Ihre Antworttexte direkt von diesem Gerät an die Claude API von Anthropic gesendet und über Ihr Anthropic-Konto abgerechnet (meist wenige Cent pro Bewertung).'
+            : 'Für die KI-Bewertung werden Ihre Antworttexte an den Server und von dort an die Claude API übermittelt.'}</p>
+        ${browserSdk() && aiStatus.mode !== 'server' && aiStatus.mode !== 'sample' ? renderApiKeySettings() : ''}
       </div>
       <div class="card">
         <h2>Spracheingabe</h2>
@@ -1257,6 +1316,19 @@
       </div>
       <p class="small muted" style="margin-top:16px">Inhalte ohne Gewähr – bitte stets mit den aktuellen Fassungen von StVO, StVG, FeV, FahrlG, FahrlPrüfV und FahrschAusbO abgleichen.</p>
     `;
+  }
+
+  function renderApiKeySettings() {
+    const hasKey = Boolean(storedApiKey());
+    return `<h3 style="margin-top:16px">Eigener API-Schlüssel</h3>
+      <p class="small muted">Einen Schlüssel erstellen Sie in der Anthropic Console unter „API Keys“ (console.anthropic.com). Er wird nur in diesem Browser auf diesem Gerät gespeichert und nur direkt an Anthropic gesendet.</p>
+      ${hasKey ? '<p class="small"><strong>Ein Schlüssel ist gespeichert.</strong></p>' : ''}
+      <label for="api-key" class="small muted">${hasKey ? 'Neuen Schlüssel eintragen' : 'API-Schlüssel'}</label>
+      <input id="api-key" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="sk-ant-…">
+      <div class="btn-row">
+        <button class="btn primary" data-action="save-api-key">Schlüssel speichern</button>
+        ${hasKey ? '<button class="btn bad" data-action="remove-api-key" data-confirm="Schlüssel wirklich entfernen? Nochmal tippen">Schlüssel entfernen</button>' : ''}
+      </div>`;
   }
 
   function showBackup() {
@@ -1351,6 +1423,34 @@
     },
     'exam-new': () => {
       exam = null;
+      render();
+    },
+    'save-api-key': () => {
+      const field = document.getElementById('api-key');
+      const key = field ? field.value.trim() : '';
+      if (!/^sk-ant-[A-Za-z0-9_-]{20,}$/.test(key)) {
+        toast('Das sieht nicht nach einem Anthropic-API-Schlüssel aus (beginnt mit „sk-ant-“).');
+        return;
+      }
+      try {
+        window.localStorage.setItem(API_KEY_STORE, key);
+      } catch (_err) {
+        toast('Der Schlüssel konnte in diesem Browser nicht gespeichert werden (privater Modus?).');
+        return;
+      }
+      connectApiKey(key);
+      toast('Schlüssel gespeichert – die KI-Bewertung ist aktiv.');
+      render();
+    },
+    'remove-api-key': () => {
+      try {
+        window.localStorage.removeItem(API_KEY_STORE);
+      } catch (_err) {
+        // Speicher nicht verfügbar – nichts zu entfernen.
+      }
+      apiService = null;
+      if (aiStatus.mode === 'apikey') aiStatus = { ai: false, mode: null, model: null };
+      toast('Schlüssel entfernt.');
       render();
     },
     export: showBackup,

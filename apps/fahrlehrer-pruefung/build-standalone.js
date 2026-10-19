@@ -25,6 +25,7 @@ const SCRIPTS = [
   'data/questions.js',
   'core/learning-core.js',
   'core/ai-prompts.js',
+  'core/ai-requests.js',
   'app.js'
 ];
 const TITLE = 'Fahrlehrer-Prüfungstrainer';
@@ -44,7 +45,9 @@ function build(options) {
   const bodyStart = index.indexOf('<body>') + '<body>'.length;
   const bodyEnd = index.indexOf('<script');
   const markup = index.slice(bodyStart, bodyEnd).trim().replace('src="icon.svg"', `src="${iconUri}"`);
-  const scripts = SCRIPTS.map(file => inlineScript(read(file))).join('\n');
+  // prependScripts: zusätzliche Skripte (Quelltext) vor der App, z. B. das SDK-Bundle der Website.
+  const extra = (opts.prependScripts || []).map(inlineScript);
+  const scripts = extra.concat(SCRIPTS.map(file => inlineScript(read(file)))).join('\n');
   const style = `<style>\n${read('styles.css')}</style>`;
 
   if (opts.fragment) {

@@ -7,7 +7,13 @@
  * Passwort); im Repository liegt nur der verschlüsselte Inhalt und eine kleine
  * Startseite, die nach Eingabe des Passworts im Browser entschlüsselt.
  *
- *   FL_SITE_PASSWORD='…' node apps/fahrlehrer-pruefung/build-site.js [zielordner]
+ *   FL_SITE_PASSWORD='…' FL_SDK_BUNDLE=anthropic-sdk.browser.js \
+ *     node apps/fahrlehrer-pruefung/build-site.js [zielordner]
+ *
+ * FL_SDK_BUNDLE (optional) ist ein Browser-Bundle des Anthropic-SDK (siehe
+ * tools/sdk-entry.mjs und README). Damit lässt sich auf der Website die
+ * KI-Bewertung mit einem eigenen API-Schlüssel nutzen; ohne Bundle läuft die
+ * Website mit der lokalen Bewertung.
  *
  * Standard-Ziel: docs/fahrlehrer (dazu docs/.nojekyll, damit GitHub Pages die
  * Dateien unverändert ausliefert). Das Passwort wird nie in eine Datei geschrieben.
@@ -164,11 +170,15 @@ button:disabled { opacity: .6; cursor: wait; }
 `;
 }
 
-function buildSite(targetDir, password) {
+function buildSite(targetDir, password, options) {
   if (!password || password.length < MIN_PASSWORD_LENGTH) {
     throw new Error(`FL_SITE_PASSWORD fehlt oder ist kürzer als ${MIN_PASSWORD_LENGTH} Zeichen.`);
   }
-  const html = build();
+  const sdkBundle = options && options.sdkBundle;
+  if (sdkBundle !== undefined && !/\bFLAnthropic\s*=/.test(sdkBundle)) {
+    throw new Error('FL_SDK_BUNDLE enthält kein Browser-Bundle mit FLAnthropic (siehe tools/sdk-entry.mjs).');
+  }
+  const html = build(sdkBundle ? { prependScripts: [sdkBundle] } : {});
   const payload = encrypt(html, password);
   if (decrypt(payload, password) !== html) throw new Error('Kontrolle der Verschlüsselung fehlgeschlagen.');
   const version = crypto.createHash('sha256').update(payload).digest('hex').slice(0, 12);
@@ -181,7 +191,10 @@ function buildSite(targetDir, password) {
 if (require.main === module) {
   const target = path.resolve(process.argv[2] || path.join(__dirname, '..', '..', 'docs', 'fahrlehrer'));
   try {
-    const result = buildSite(target, process.env.FL_SITE_PASSWORD);
+    const bundlePath = process.env.FL_SDK_BUNDLE;
+    const sdkBundle = bundlePath ? fs.readFileSync(bundlePath, 'utf8') : undefined;
+    if (!sdkBundle) console.warn('Hinweis: FL_SDK_BUNDLE nicht gesetzt – Website ohne KI-Bewertung.');
+    const result = buildSite(target, process.env.FL_SITE_PASSWORD, { sdkBundle });
     const nojekyll = path.join(path.dirname(target), '.nojekyll');
     if (!fs.existsSync(nojekyll)) fs.writeFileSync(nojekyll, '');
     console.log(`Geschrieben: ${target} (app.bin ${Math.round(result.bytes / 1024)} KB, Version ${result.version})`);

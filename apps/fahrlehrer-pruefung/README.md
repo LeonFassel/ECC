@@ -66,6 +66,26 @@ in eine Datei geschrieben. Mit GitHub Pages (Quelle: Branch, Ordner `/docs`)
 ist die App dann unter `https://<nutzer>.github.io/<repo>/fahrlehrer/`
 erreichbar; dort darf sie das Mikrofon direkt nutzen.
 
+### KI-Bewertung auf der Website (eigener API-Schlüssel)
+
+Für KI-Bewertung und KI-Prüfer auf der Website wird das offizielle
+Anthropic-SDK als Browser-Bundle in die verschlüsselte App eingebaut:
+
+```bash
+cd apps/fahrlehrer-pruefung && npm install && cd ../..
+npx esbuild@0.25.10 apps/fahrlehrer-pruefung/tools/sdk-entry.mjs --bundle \
+  --format=iife --platform=browser --target=safari15,chrome100 --minify \
+  --legal-comments=inline --outfile=/tmp/anthropic-sdk.browser.js
+FL_SITE_PASSWORD='…' FL_SDK_BUNDLE=/tmp/anthropic-sdk.browser.js \
+  node apps/fahrlehrer-pruefung/build-site.js
+```
+
+Unter *Einstellungen → Eigener API-Schlüssel* trägt man dann einen Schlüssel
+aus der Anthropic Console ein. Er bleibt nur im Browser des Geräts; Anfragen
+gehen direkt an die Claude API und werden über das eigene Anthropic-Konto
+abgerechnet. Request-Aufbau und Auswertung (`public/core/ai-requests.js`) sind
+dieselben wie beim Server.
+
 ## Spracheingabe
 
 „Antwort einsprechen“ nutzt die eingebaute Spracherkennung des Browsers
@@ -119,11 +139,12 @@ apps/fahrlehrer-pruefung/
   server.js                 Statischer Server + KI-Endpunkte
   build-standalone.js       Baut die App als eine einzige HTML-Datei
   build-site.js             Baut die passwortgeschützte Website (docs/fahrlehrer)
-  lib/ai-examiner.js        Claude-Requests (Bewertung, Prüfer), Antwortprüfung
+  lib/ai-examiner.js        Claude-Client für den Server (nutzt public/core/ai-requests.js)
   public/index.html         App-Hülle mit Navigation
   public/app.js             Oberfläche (Views, Übung, Prüfung, Analyse)
   public/core/learning-core.js  Lernlogik: Bewertung, Fortschritt, Wiederholung, Analyse
   public/core/ai-prompts.js     Anweisungen für KI-Bewertung und KI-Prüfer (Server und claude.ai)
+  public/core/ai-requests.js    Claude-Requests, JSON-Schemas, Auswertung (Server und Website)
   public/data/questions.js      Fächer, Grundfragen und Zusammenführung aller Fragen
   public/data/questions-muendlich.js  Mündliche Prüfungsfragen Verkehrsverhalten/Recht
   public/data/questions-technik.js    Technikfragen

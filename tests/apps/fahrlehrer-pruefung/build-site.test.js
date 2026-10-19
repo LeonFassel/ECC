@@ -77,6 +77,22 @@ async function runTests() {
     }
   }));
 
+  results.push(await test('optional SDK bundle is placed before the app scripts', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fl-site-'));
+    try {
+      const password = 'testpasswort-1234';
+      const sdkBundle = '(function(){ window.FLAnthropic = function FakeSdk() {}; })();';
+      buildSite(dir, password, { sdkBundle });
+      const html = await browserDecrypt(fs.readFileSync(path.join(dir, 'app.bin')), password);
+      const sdkAt = html.indexOf('window.FLAnthropic = function FakeSdk');
+      assert.ok(sdkAt > 0, 'bundle missing');
+      assert.ok(sdkAt < html.indexOf('root.FLData = factory('), 'bundle must load before the app');
+      assert.throws(() => buildSite(dir, password, { sdkBundle: 'console.log(1)' }), /FL_SDK_BUNDLE/);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }));
+
   results.push(await test('refuses to build without a sufficiently long password', async () => {
     assert.throws(() => buildSite(os.tmpdir(), ''), /FL_SITE_PASSWORD/);
     assert.throws(() => buildSite(os.tmpdir(), 'kurz'), /FL_SITE_PASSWORD/);

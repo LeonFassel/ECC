@@ -272,7 +272,7 @@ a { color: var(--primary); }
 
 :focus-visible { outline: 3px solid var(--primary); outline-offset: 2px; }
 
-textarea, input[type="number"], select {
+textarea, input[type="number"], input[type="password"], select {
   width: 100%;
   border: 1px solid var(--border);
   border-radius: 10px;
