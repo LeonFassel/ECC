@@ -974,12 +974,35 @@
   const stripLegalRefs = text => LEGAL_REWRITES
     .reduce((acc, [from, to]) => acc.split(from).join(to), String(text || ''))
     .replace(LEGAL_PAREN, '').replace(PARAGRAPH_SENTENCE, '$1').replace(/\s{2,}/g, ' ').trim();
-  // Vorfahrt- bzw. Vorrang-gewähren-Zeichen sind Vorschriftzeichen (Anlage 2), keine Vorrangzeichen (Anlage 3).
-  const WAIT_SIGNS = new Set(['vz-205', 'vz-206', 'vz-208']);
-  const CATEGORY_CLAIMS = [
-    { prefix: 'Vorschriftzeichen', claim: { label: 'Falsch eingeordnet: Das ist ein Vorschriftzeichen, kein Richt- oder Vorrangzeichen', keywords: ['richtzeichen', 'vorrangzeichen'] } },
-    { prefix: 'Richtzeichen', claim: { label: 'Falsch eingeordnet: Das ist ein Richtzeichen, kein Vorschriftzeichen', keywords: ['vorschriftzeichen'] } }
+  // Zeichenart (Gruppe) gehört zur Bewertung: Die richtige Art ist ein Kernpunkt, eine falsche Art ein Fehler.
+  // Vorfahrt-/Vorrang-gewähren-Zeichen (205, 206, 208) sind z. B. Vorschriftzeichen, keine Vorrangzeichen.
+  const SIGN_KINDS = [
+    { prefix: 'Gefahrzeichen', label: 'Gefahrzeichen', article: 'ein', keywords: ['gefahrzeichen'], wrong: ['vorschriftzeichen', 'richtzeichen', 'vorrangzeichen', 'verkehrseinrichtung'] },
+    { prefix: 'Vorschriftzeichen', label: 'Vorschriftzeichen', article: 'ein', keywords: ['vorschriftzeichen'], wrong: ['gefahrzeichen', 'richtzeichen', 'vorrangzeichen', 'verkehrseinrichtung'] },
+    { prefix: 'Richtzeichen', label: 'Richtzeichen', article: 'ein', keywords: ['richtzeichen'], wrong: ['gefahrzeichen', 'vorschriftzeichen', 'verkehrseinrichtung'] },
+    { prefix: 'Sinnbild', label: 'Richtzeichen', article: 'ein', keywords: ['richtzeichen', 'sinnbild'], wrong: ['gefahrzeichen', 'vorschriftzeichen', 'verkehrseinrichtung'] },
+    { prefix: 'Verkehrseinrichtung', label: 'Verkehrseinrichtung', article: 'eine', keywords: ['verkehrseinrichtung'], wrong: ['gefahrzeichen', 'vorschriftzeichen', 'richtzeichen'] }
   ];
+  const CONTEXT_WORDS = ['mit', 'einem', 'einer', 'durch', 'oder', 'zum', 'zur', 'nach', 'vor', 'neben', 'unter', 'über', 'wie', 'andere', 'anderen'];
+  const WRONG_KIND_LABEL = { gefahrzeichen: 'Gefahrzeichen', vorschriftzeichen: 'Vorschriftzeichen', richtzeichen: 'Richtzeichen', vorrangzeichen: 'Vorrangzeichen', verkehrseinrichtung: 'Verkehrseinrichtung' };
+
+  function addSignKind(card) {
+    const kind = SIGN_KINDS.find(entry => (card.category || '').startsWith(entry.prefix));
+    if (!kind) return card; // Zusatzzeichen gehören zu Haupt-Zeichen verschiedener Arten.
+    const keywords = kind.keywords.concat(/Vorrangzeichen/.test(card.category) ? ['vorrangzeichen'] : []);
+    const wrong = kind.wrong.filter(word => !keywords.includes(word));
+    card.keyPoints = card.keyPoints.concat([{ label: `Zeichenart: ${kind.label}`, keywords }]);
+    card.wrongClaims = (card.wrongClaims || []).concat(wrong.map(word => ({
+      label: `Falsche Zeichenart: Das ist ${kind.article} ${kind.label}, ${word === 'verkehrseinrichtung' ? 'keine' : 'kein'} ${WRONG_KIND_LABEL[word]}`,
+      keywords: [word],
+      // „zusammen mit einem Gefahrzeichen“, „durch Verkehrszeichen oder Verkehrseinrichtungen“ ordnen nicht ein.
+      exceptAfter: CONTEXT_WORDS
+    })));
+    if (!keywords.some(word => card.modelAnswer.toLowerCase().includes(word))) {
+      card.modelAnswer = `${card.modelAnswer.trim()} Es ist ${kind.article} ${kind.label}.`;
+    }
+    return card;
+  }
 
   function withoutLegalRefs(card) {
     card.category = stripLegalRefs(card.category);
@@ -1000,11 +1023,7 @@
     const merged = Object.assign({ explanation: '', example: '' }, item);
     if (extra) EXTRA_FIELDS.forEach(field => { if (extra[field] !== undefined) merged[field] = extra[field]; });
     withoutLegalRefs(merged);
-    const rule = CATEGORY_CLAIMS.find(entry => (merged.category || '').startsWith(entry.prefix));
-    if (rule) merged.wrongClaims = (merged.wrongClaims || []).concat([rule.claim]);
-    if (WAIT_SIGNS.has(merged.id)) {
-      merged.keyPoints = merged.keyPoints.concat([{ label: 'Vorschriftzeichen (kein Vorrangzeichen)', keywords: ['vorschriftzeichen'] }]);
-    }
+    addSignKind(merged);
     merged.imageSrc = (item.images || []).map(key => imageMap[key]).filter(Boolean);
     // Ohne Abbildung im Original (z. B. Parkflächenmarkierung) wird die Karte als Textfrage gestellt.
     if (merged.imageSrc.length === 0) {

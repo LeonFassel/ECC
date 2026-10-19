@@ -100,6 +100,28 @@
 
   const NEGATION = /(?:^|\s)(nicht|kein|keine|keinen|keiner|nie|niemals|ohne|verwechseln|verwechselt|unterschied|gegensatz|anders als)(?=\s|$)/;
 
+  /** Alle Fundstellen eines Schlüsselworts (für längere Begriffe; sonst nur die erste). */
+  function findAllKeywords(answer, keyword) {
+    const first = findKeyword(answer, keyword);
+    if (first < 0) return [];
+    const k = normalize(keyword);
+    if (/^[0-9]|[0-9]$/.test(k) || k.length <= 3) return [first];
+    const hits = [];
+    for (let i = answer.indexOf(k); i >= 0; i = answer.indexOf(k, i + 1)) hits.push(i);
+    return hits;
+  }
+
+  /**
+   * Erwähnung im Zusammenhang statt Behauptung, z. B. „zusammen mit einem Gefahrzeichen“:
+   * eines der zwei Wörter davor steht in `exceptAfter`.
+   */
+  function isContextMention(answer, index, exceptAfter) {
+    if (!exceptAfter || exceptAfter.length === 0) return false;
+    const before = answer.slice(0, index).trim().split(' ').slice(-2);
+    const words = exceptAfter.map(normalize);
+    return before.some(word => words.includes(word));
+  }
+
   /** Prüft, ob vor der Fundstelle eine Verneinung oder Abgrenzung steht. */
   function isNegated(answer, index) {
     const words = answer.slice(0, index).split(' ').slice(-6).join(' ');
@@ -124,10 +146,8 @@
     }
 
     for (const claim of question.wrongClaims || []) {
-      const hit = answer && claim.keywords.some(k => {
-        const index = findKeyword(answer, k);
-        return index >= 0 && !isNegated(answer, index);
-      });
+      const hit = answer && claim.keywords.some(k => findAllKeywords(answer, k)
+        .some(index => !isNegated(answer, index) && !isContextMention(answer, index, claim.exceptAfter)));
       if (hit) wrong.push(claim.label);
     }
 

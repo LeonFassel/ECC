@@ -291,6 +291,29 @@
     toast(message || KEYBOARD_HINT);
   }
 
+  /** Teil eines erkannten Textes, der noch nicht übernommen wurde (Rest hinter dem bereits verbrauchten Anfang). */
+  function unconsumedPart(text, consumed) {
+    if (!consumed) return text;
+    if (text.length <= consumed.length) return '';
+    let cut = consumed.length;
+    // Hat die Erkennung den Anfang korrigiert, nicht mitten im Wort abschneiden.
+    if (!text.startsWith(consumed)) {
+      while (cut < text.length && !/\s/.test(text[cut])) cut += 1;
+    }
+    return text.slice(cut);
+  }
+
+  /**
+   * Der Nutzer hat das Antwortfeld während des Diktats per Tastatur geändert (z. B. etwas gelöscht):
+   * Der aktuelle Feldinhalt wird zur neuen Grundlage, bisher Erkanntes gilt als verbraucht.
+   */
+  function rebaseDictation(target, value) {
+    const session = dictation;
+    if (!session || session.target !== target || session.done) return;
+    session.base = value.trim();
+    session.consumed = session.latest.slice();
+  }
+
   /** Beendet eine Aufnahme genau einmal – egal ob über onend, Fehler oder Zeitüberschreitung. */
   function finishDictation(session) {
     if (session.done) return;
@@ -330,7 +353,9 @@
     recognition.lang = 'de-DE';
     recognition.continuous = true;
     recognition.interimResults = true;
-    const session = { target, recognition, base: draftOf(target).trim(), finalText: '', stopping: false, started: false, done: false, then: null };
+    // base: Text im Feld außerhalb des Diktats; latest/consumed: erkannte Texte je Ergebnis bzw. der Teil davon,
+    // der schon übernommen (oder vom Nutzer bearbeitet/gelöscht) wurde und nicht wiederkommen darf.
+    const session = { target, recognition, base: draftOf(target).trim(), latest: [], consumed: [], stopping: false, started: false, done: false, then: null };
     dictation = session;
 
     const markStarted = () => {
@@ -349,13 +374,14 @@
 
     recognition.onresult = event => {
       markStarted();
-      let interim = '';
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const result = event.results[i];
-        if (result.isFinal) session.finalText += `${result[0].transcript} `;
-        else interim += result[0].transcript;
+      // Aus allen Ergebnissen der Sitzung neu zusammensetzen (Safari liefert oft ein einziges, wachsendes Ergebnis).
+      const parts = [];
+      for (let i = 0; i < event.results.length; i++) {
+        const text = event.results[i][0].transcript;
+        session.latest[i] = text;
+        parts.push(unconsumedPart(text, session.consumed[i] || ''));
       }
-      setDraft(target, [session.base, session.finalText.trim(), interim.trim()].filter(Boolean).join(' '));
+      setDraft(target, [session.base].concat(parts.map(part => part.trim())).filter(Boolean).join(' '));
     };
     recognition.onerror = event => {
       if (event.error === 'not-allowed' || event.error === 'service-not-allowed' || event.error === 'audio-capture') {
@@ -1510,8 +1536,14 @@
 
   app.addEventListener('input', event => {
     const el = event.target;
-    if (el.dataset.input === 'answer' && practice) practice.answer = el.value;
-    if (el.dataset.input === 'exam-answer' && exam) exam.draft = el.value;
+    if (el.dataset.input === 'answer' && practice) {
+      practice.answer = el.value;
+      rebaseDictation('practice', el.value);
+    }
+    if (el.dataset.input === 'exam-answer' && exam) {
+      exam.draft = el.value;
+      rebaseDictation('exam', el.value);
+    }
     if (el.dataset.input === 'goal') {
       const goal = Math.round(Number(el.value));
       if (goal >= 3 && goal <= 40) {

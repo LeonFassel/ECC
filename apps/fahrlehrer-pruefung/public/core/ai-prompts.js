@@ -55,6 +55,7 @@
       q.signLabel && q.category ? `Zeichenart: ${q.category}` : null,
       q.official && q.official.length ? `Amtlicher Text (StVO): ${q.official.map(part => part.text).join(' ')}` : null,
       q.signLabel ? 'Bewertungshinweis: Bei Verkehrszeichen werden keine Paragrafen- oder Anlagenangaben erwartet – fehlende Paragrafen nicht als Mangel werten.' : null,
+      q.signLabel && q.category && !/^Zusatzzeichen/.test(q.category) ? `Zeichenart bewerten: Die richtige Zeichenart (${q.category.split(',')[0]}) zählt als Kernpunkt. Ordnet der Prüfling das Zeichen einer falschen Zeichenart zu (z. B. Gefahrzeichen statt Vorschriftzeichen oder Vorrangzeichen statt Vorschriftzeichen), ist das ein Fehler: unter „errors“ nennen und die Bewertung deutlich senken. Erwähnungen anderer Zeichenarten im Zusammenhang (z. B. „zusammen mit einem Gefahrzeichen“) sind kein Fehler.` : null,
       `Frage: ${q.question}`,
       `Musterantwort: ${q.modelAnswer}`,
       `Kernpunkte: ${q.keyPoints.map(p => p.label).join('; ')}`,

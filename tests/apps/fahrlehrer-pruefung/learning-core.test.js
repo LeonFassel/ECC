@@ -126,6 +126,29 @@ function runTests() {
     }
   }));
 
+  results.push(test('sign kind counts: right kind is a key point, a wrong kind is an error', () => {
+    const KINDS = { Gefahrzeichen: 'gefahrzeichen', Vorschriftzeichen: 'vorschriftzeichen', Richtzeichen: 'richtzeichen', Verkehrseinrichtung: 'verkehrseinrichtung' };
+    const examples = { Gefahrzeichen: 'vz-101', Vorschriftzeichen: 'vz-205', Richtzeichen: 'vz-306', Verkehrseinrichtung: 'vz-605' };
+    for (const [kind, id] of Object.entries(examples)) {
+      const sign = data.questions.find(x => x.id === id);
+      const right = Core.evaluateAnswer(sign, `Das ist ein ${kind}.`);
+      assert.ok(right.covered.includes(`Zeichenart: ${kind}`), `${id} right kind not counted`);
+      assert.deepStrictEqual(right.wrong, [], `${id} right kind flagged`);
+      for (const other of Object.keys(KINDS).filter(k => k !== kind)) {
+        const result = Core.evaluateAnswer(sign, `Das ist ein ${other}.`);
+        assert.ok(result.wrong.some(label => label.startsWith('Falsche Zeichenart')), `${id} as ${other} not flagged`);
+        assert.ok(result.score < right.score, `${id} wrong kind must lower the score`);
+        assert.deepStrictEqual(Core.evaluateAnswer(sign, `Das ist kein ${other}.`).wrong, [], `${id} negation`);
+      }
+    }
+    const sign274 = data.questions.find(x => x.id === 'vz-274');
+    assert.deepStrictEqual(Core.evaluateAnswer(sign274, 'Vorschriftzeichen; endet zusammen mit einem Gefahrzeichen nach der Gefahrstelle.').wrong, []);
+    assert.ok(Core.evaluateAnswer(sign274, 'Endet mit einem Gefahrzeichen. Das ist ein Gefahrzeichen.').wrong.length > 0, 'later assertion after a context mention');
+    for (const item of data.signs.filter(x => !x.category.startsWith('Zusatzzeichen'))) {
+      assert.ok(item.keyPoints.some(point => point.label.startsWith('Zeichenart: ')), `${item.id} has no kind key point`);
+    }
+  }));
+
   results.push(test('wrong claims are detected unless negated', () => {
     const stop = q('vz-206');
     const wrong = Core.evaluateAnswer(stop, 'Stoppschild, Vorfahrt gewähren, langsames Durchrollen reicht.');

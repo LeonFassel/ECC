@@ -33,6 +33,7 @@ function runTests() {
     assert.ok(brief.includes('Amtlicher Text (StVO)'));
     assert.ok(brief.includes('Zeichenart: Vorschriftzeichen'));
     assert.ok(brief.includes('keine Paragrafen'));
+    assert.ok(brief.includes('Zeichenart bewerten'));
     assert.ok(brief.includes('sieht nur die Originalabbildung'));
     assert.ok(brief.includes('Typische Fehler'));
   }));
