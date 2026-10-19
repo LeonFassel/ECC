@@ -1,0 +1,17 @@
+{
+  "name": "fahrlehrer-pruefung",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Lern-App für die mündliche Fahrlehrerprüfung (Klasse BE) mit Prüfungssimulation und Schwächenanalyse",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node ../../tests/run-all.js apps/fahrlehrer-pruefung"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "optionalDependencies": {
+    "@anthropic-ai/sdk": "^0.134.0"
+  }
+}
