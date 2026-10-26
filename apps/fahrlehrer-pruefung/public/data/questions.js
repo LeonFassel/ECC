@@ -14,19 +14,30 @@
  */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) {
-    module.exports = factory(
-      require('./questions-muendlich.js'),
-      require('./questions-technik.js'),
-      require('./questions-sammlung.js'),
-      require('./signs.js'),
-      require('./signs-stvo.js'),
-      require('./sign-images.js')
-    );
+    module.exports = factory({
+      muendlich: require('./questions-muendlich.js'),
+      technik: require('./questions-technik.js'),
+      sammlung: require('./questions-sammlung.js'),
+      karteikarten: require('./questions-karteikarten.js'),
+      signExtras: require('./signs.js'),
+      stvo: require('./signs-stvo.js'),
+      signImages: require('./sign-images.js')
+    });
   } else {
-    root.FLData = factory(root.FLQuestionsMuendlich, root.FLQuestionsTechnik, root.FLQuestionsSammlung, root.FLSigns, root.FLSignsStvo, root.FLSignImages);
+    root.FLData = factory({
+      muendlich: root.FLQuestionsMuendlich,
+      technik: root.FLQuestionsTechnik,
+      sammlung: root.FLQuestionsSammlung,
+      karteikarten: root.FLQuestionsKarteikarten,
+      signExtras: root.FLSigns,
+      stvo: root.FLSignsStvo,
+      signImages: root.FLSignImages
+    });
   }
-})(typeof self !== 'undefined' ? self : this, function (muendlich, technik, sammlung, signExtras, stvo, signImages) {
+})(typeof self !== 'undefined' ? self : this, function (sources) {
   'use strict';
+
+  const { muendlich, technik, sammlung, karteikarten, signExtras, stvo, signImages } = sources;
 
   const subjects = [
     { id: 'zeichen', name: 'Verkehrszeichen', short: 'Zeichen', color: '#2563eb', description: 'Vorschriftzeichen, Gefahrzeichen, Richtzeichen, Markierungen und ihre Rangfolge.' },
@@ -1034,14 +1045,29 @@
   // Für das Bild-Training zählen nur Karten mit Original-Abbildung.
   const signs = allSigns.filter(item => item.imageSrc.length > 0);
 
+  // Karteikarten: eigenes Fach mit Stapeln (Unterkategorien); nur sichtbar, wenn Karten vorhanden sind.
+  const flashcards = (karteikarten && karteikarten.questions) || [];
+  const decks = ((karteikarten && karteikarten.decks) || [])
+    .filter(deck => flashcards.some(q => q.deck === deck.id));
+  if (flashcards.length > 0) {
+    subjects.push({
+      id: 'karteikarten',
+      name: 'Karteikarten',
+      short: 'Karten',
+      color: '#be185d',
+      description: `Lernkarteikarten nach Themen: ${decks.map(deck => deck.name).join(', ')} – Frage und Antwort wie auf der Karte.`
+    });
+  }
+
   const all = questions
     .concat((muendlich && muendlich.questions) || [])
     .concat((technik && technik.questions) || [])
     .concat((sammlung && sammlung.questions) || [])
+    .concat(flashcards)
     .concat(allSigns);
 
   // Sammlungsfragen, die inhaltlich schon als eigene Frage enthalten sind (Verweis statt Dublette).
   const collectionCovered = (sammlung && sammlung.covered) || [];
 
-  return { subjects, questions: all, signs, collectionCovered };
+  return { subjects, questions: all, signs, collectionCovered, decks };
 });

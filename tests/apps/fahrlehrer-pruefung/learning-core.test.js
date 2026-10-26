@@ -6,6 +6,7 @@
  */
 
 const assert = require('assert');
+const path = require('path');
 
 const Core = require('../../../apps/fahrlehrer-pruefung/public/core/learning-core');
 const data = require('../../../apps/fahrlehrer-pruefung/public/data/questions');
@@ -36,7 +37,8 @@ function runTests() {
   // --- question bank ---
 
   results.push(test('question bank covers all six subjects', () => {
-    const ids = data.subjects.map(s => s.id).sort();
+    // Das Fach "Karteikarten" erscheint nur, wenn Karten eingebaut sind (siehe eigener Test).
+    const ids = data.subjects.map(s => s.id).filter(id => id !== 'karteikarten').sort();
     assert.deepStrictEqual(ids, ['paedagogik', 'praxis', 'recht', 'technik', 'verhalten', 'zeichen']);
     for (const s of data.subjects) {
       assert.ok(data.questions.filter(x => x.subject === s.id).length >= 5, `too few questions for ${s.id}`);
@@ -49,12 +51,14 @@ function runTests() {
       assert.ok(!seen.has(item.id), `duplicate id ${item.id}`);
       seen.add(item.id);
       // StVO-Zeichenkarten bringen den amtlichen Text mit; Erklärung und Beispiel sind dort optional.
-      const fields = item.signLabel ? ['question', 'modelAnswer'] : ['question', 'explanation', 'example', 'modelAnswer'];
+      // Karteikarten geben Vorder- und Rückseite der Karte wieder, ebenfalls ohne eigene Erklärung.
+      const compact = item.signLabel || item.collection === 'karteikarten';
+      const fields = compact ? ['question', 'modelAnswer'] : ['question', 'explanation', 'example', 'modelAnswer'];
       for (const field of fields) {
         assert.ok(typeof item[field] === 'string' && item[field].length > 10, `${item.id}.${field}`);
       }
       assert.ok(item.topic && item.topic.length >= 3, `${item.id}.topic`);
-      assert.ok(item.keyPoints.length >= (item.signLabel ? 1 : 3), `${item.id} keyPoints`);
+      assert.ok(item.keyPoints.length >= (compact ? 1 : 3), `${item.id} keyPoints`);
       assert.ok(item.followUps.length >= 1, `${item.id} followUps`);
       assert.ok([1, 2, 3].includes(item.difficulty), `${item.id} difficulty`);
       for (const p of item.keyPoints) {
@@ -90,6 +94,38 @@ function runTests() {
     for (const item of data.questions) {
       const ev = Core.evaluateAnswer(item, item.modelAnswer);
       assert.deepStrictEqual(ev.wrong, [], `${item.id} model answer flagged as wrong: ${ev.wrong.join(', ')}`);
+    }
+  }));
+
+  results.push(test('flashcards form their own subject with decks as subcategories', () => {
+    const dataDir = path.join(__dirname, '../../../apps/fahrlehrer-pruefung/public/data');
+    const deckFile = require.resolve(path.join(dataDir, 'questions-karteikarten.js'));
+    const bankFile = require.resolve(path.join(dataDir, 'questions.js'));
+    const saved = { deck: require.cache[deckFile], bank: require.cache[bankFile] };
+    const card = (id, deck, topic) => ({
+      id, collection: 'karteikarten', subject: 'karteikarten', deck, deckName: deck, card: 2, cardOf: 3, topic,
+      question: 'Frage der Vorderseite?', modelAnswer: 'Antwort der Rückseite.',
+      keyPoints: [{ label: 'Rückseite', keywords: ['rückseite'] }], followUps: ['Nachfrage?'], difficulty: 1
+    });
+    try {
+      require.cache[deckFile] = { id: deckFile, filename: deckFile, loaded: true, exports: {
+        decks: [{ id: 'paedagogik', name: 'Pädagogik' }, { id: 'recht', name: 'Recht' }],
+        questions: [card('kk-p-002', 'paedagogik', 'Kommunikation'), card('kk-p-003', 'paedagogik', 'Kommunikation')]
+      } };
+      delete require.cache[bankFile];
+      const withCards = require(bankFile);
+      const subject = withCards.subjects.find(s => s.id === 'karteikarten');
+      assert.ok(subject, 'subject missing');
+      assert.ok(subject.description.includes('Pädagogik') && !subject.description.includes('Recht'), 'empty decks are hidden');
+      assert.deepStrictEqual(withCards.decks.map(d => d.id), ['paedagogik']);
+      assert.strictEqual(withCards.questions.filter(x => x.subject === 'karteikarten').length, 2);
+    } finally {
+      if (saved.deck) require.cache[deckFile] = saved.deck; else delete require.cache[deckFile];
+      if (saved.bank) require.cache[bankFile] = saved.bank; else delete require.cache[bankFile];
+    }
+    const placeholder = require(deckFile);
+    if (placeholder.questions.length === 0) {
+      assert.ok(!data.subjects.some(s => s.id === 'karteikarten'), 'no subject without cards');
     }
   }));
 

@@ -6,6 +6,7 @@
   const Prompts = window.FLPrompts;
   const Requests = window.FLAiRequests;
   const { subjects, questions, signs } = window.FLData;
+  const decks = window.FLData.decks || [];
   const STORAGE_KEY = 'fl-pruefung-state-v1';
   const questionById = new Map(questions.map(q => [q.id, q]));
   const subjectById = new Map(subjects.map(s => [s.id, s]));
@@ -506,7 +507,7 @@
     const r = route();
     const key = `${r.name}/${r.param || ''}`;
     document.querySelectorAll('[data-nav]').forEach(a => {
-      const active = a.dataset.nav === r.name || (a.dataset.nav === 'faecher' && (r.name === 'fach' || r.name === 'sammlung'));
+      const active = a.dataset.nav === r.name || (a.dataset.nav === 'faecher' && (r.name === 'fach' || r.name === 'sammlung' || r.name === 'stapel'));
       a.classList.toggle('active', active);
       if (active) a.setAttribute('aria-current', 'page');
       else a.removeAttribute('aria-current');
@@ -518,6 +519,7 @@
       faecher: renderSubjects,
       fach: () => renderSubject(r.param),
       sammlung: renderCollection,
+      stapel: () => renderDeck(r.param),
       frage: () => renderSingleQuestion(r.param),
       ueben: renderPractice,
       pruefung: renderExam,
@@ -682,6 +684,7 @@
   function renderSubject(id) {
     const subject = subjectById.get(id);
     if (!subject) return '<div class="card empty">Fach nicht gefunden.</div>';
+    if (id === 'karteikarten') return renderFlashcards(subject);
     const ts = now();
     const stat = Core.subjectStats(window.FLData, state, ts).find(s => s.subject.id === id);
     const list = questions.filter(q => q.subject === id);
@@ -720,6 +723,118 @@
         <ul class="list">${list.filter(q => !isSignCard(q)).map(q => questionListItem(q, ts)).join('')}</ul>
       </div>
     `;
+  }
+
+  // ------------------------------------------------------------------ Karteikarten
+
+  function deckCards(deckId) {
+    return questions.filter(q => q.collection === 'karteikarten' && q.deck === deckId)
+      .sort((a, b) => a.card - b.card);
+  }
+
+  /** Themen (Überschriften der Karten) in der Reihenfolge des Stapels. */
+  function deckTopics(cards) {
+    const topics = new Map();
+    for (const q of cards) {
+      if (!topics.has(q.topic)) topics.set(q.topic, []);
+      topics.get(q.topic).push(q);
+    }
+    return Array.from(topics, ([name, items]) => ({ name, items }));
+  }
+
+  function cardStats(cards, ts) {
+    const levels = { sicher: 0, mittel: 0, schwach: 0, offen: 0 };
+    for (const q of cards) levels[Core.masteryLevel(Core.questionMastery(state.attempts[q.id], ts)).id] += 1;
+    return levels;
+  }
+
+  function weakIds(cards, ts) {
+    return cards.filter(q => {
+      const m = Core.questionMastery(state.attempts[q.id], ts);
+      return m !== null && m < 0.75;
+    }).map(q => q.id);
+  }
+
+  function renderFlashcards(subject) {
+    const ts = now();
+    const stat = Core.subjectStats(window.FLData, state, ts).find(s => s.subject.id === subject.id);
+    const all = questions.filter(q => q.subject === subject.id);
+    return `
+      <header class="page-head">
+        <div class="page-head-nav">${backArrow()}<a href="#/faecher" class="small">Fächer</a></div>
+        <h1>${esc(subject.name)}</h1>
+        <p>Fragen und Antworten der Lernkarteikarten, nach Themen sortiert. Beantworten Sie die Vorderseite frei – danach sehen Sie Bewertung und die Rückseite der Karte.</p>
+      </header>
+      <div class="grid grid-2">
+        <div class="card">
+          <h2>Ihr Stand</h2>
+          ${metricRow('Lernfortschritt', stat.learningProgress)}
+          ${metricRow('Wissensstand', stat.knowledge, tone(stat.knowledge))}
+          ${metricRow('Prüfungsreife', stat.readiness, tone(stat.readiness))}
+        </div>
+        <div class="card">
+          <h2>Üben</h2>
+          <p class="muted small">Alle ${all.length} Karten gemischt oder gezielt einen Stapel wählen.</p>
+          <div class="btn-row">
+            <button class="btn primary" data-action="practice-subject" data-subject="${esc(subject.id)}">Alle Karten üben</button>
+            <button class="btn" data-action="practice-subject-weak" data-subject="${esc(subject.id)}" ${stat.levels.schwach + stat.levels.mittel === 0 ? 'disabled' : ''}>Nur Schwächen</button>
+          </div>
+        </div>
+      </div>
+      <div class="section-title"><h2>Themen</h2></div>
+      <div class="grid grid-2">${decks.map(deck => {
+        const cards = deckCards(deck.id);
+        const levels = cardStats(cards, ts);
+        const worked = cards.length - levels.offen;
+        return `<a class="card subject-card" href="#/stapel/${esc(deck.id)}" style="--subject:${esc(deck.color || subject.color)}">
+          <h3><span>${esc(deck.name)}</span><span class="chip">${cards.length} Karten</span></h3>
+          <p class="small">${deckTopics(cards).length} Unterthemen</p>
+          <p class="muted small">${worked} von ${cards.length} Karten bearbeitet</p>
+          ${metricRow('Lernfortschritt', cards.length ? worked / cards.length : 0)}
+        </a>`;
+      }).join('')}</div>
+    `;
+  }
+
+  function renderDeck(deckId) {
+    const deck = decks.find(d => d.id === deckId);
+    if (!deck) return '<div class="card empty">Stapel nicht gefunden.</div>';
+    const ts = now();
+    const cards = deckCards(deck.id);
+    const levels = cardStats(cards, ts);
+    const weak = weakIds(cards, ts);
+    const topics = deckTopics(cards);
+    return `
+      <header class="page-head">
+        <div class="page-head-nav">${backArrow()}<a href="#/fach/karteikarten" class="small">Karteikarten</a></div>
+        <h1>Karteikarten: ${esc(deck.name)}</h1>
+        <p>${cards.length} Karten in ${topics.length} Unterthemen.</p>
+      </header>
+      <div class="card">
+        <p class="small muted">Sicher: ${levels.sicher} · Ausbaufähig: ${levels.mittel} · Schwach: ${levels.schwach} · Offen: ${levels.offen}</p>
+        <div class="btn-row">
+          <button class="btn primary" data-action="practice-ids" data-title="Karteikarten – ${esc(deck.name)}" data-ids="${esc(cards.map(q => q.id).join(','))}">Alle ${cards.length} Karten üben</button>
+          <button class="btn" data-action="practice-ids" data-title="Karteikarten – ${esc(deck.name)} – Schwächen" data-ids="${esc(weak.join(','))}" ${weak.length ? '' : 'disabled'}>Nur Schwächen</button>
+        </div>
+      </div>
+      ${topics.map(topic => `
+      <div class="section-title"><h2>${esc(topic.name)}</h2>
+        <button class="btn small-btn" data-action="practice-ids" data-title="${esc(deck.name)} – ${esc(topic.name)}" data-ids="${esc(topic.items.map(q => q.id).join(','))}">${topic.items.length === 1 ? 'Karte üben' : `${topic.items.length} Karten üben`}</button></div>
+      <div class="card"><ul class="list">${topic.items.map(q => flashcardListItem(q, ts)).join('')}</ul></div>`).join('')}
+    `;
+  }
+
+  function flashcardListItem(q, ts) {
+    const mastery = Core.questionMastery(state.attempts[q.id], ts);
+    const firstLine = q.question.split('\n')[0];
+    const preview = firstLine.length > 180 ? `${firstLine.slice(0, 177)} …` : firstLine;
+    return `<li><div><a href="#/frage/${esc(q.id)}">${esc(preview)}</a><div class="small muted">Karte ${esc(q.card)} von ${esc(q.cardOf)}</div></div>${levelChip(mastery)}</li>`;
+  }
+
+  // Abbildungen der Kartenrückseite: erst nach der Antwort sichtbar.
+  function answerFigureStage(q) {
+    if (!Array.isArray(q.answerFigures) || q.answerFigures.length === 0) return '';
+    return figureStage({ figures: q.answerFigures });
   }
 
   function renderSignCatalog(ts) {
@@ -836,7 +951,7 @@
       <div class="progress-meta"><span class="page-head-nav">${backArrow()}<span>${esc(practice.title)}</span></span><span>Frage ${practice.index + 1} von ${practice.queue.length}</span></div>
       ${bar(practice.index / practice.queue.length, 'thin')}
       <div class="card section">
-        <div style="display:flex;gap:8px;flex-wrap:wrap">${subjectChip(q.subject)}${topicChip}<span class="chip">Schwierigkeit ${'●'.repeat(q.difficulty)}${'○'.repeat(3 - q.difficulty)}</span></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">${subjectChip(q.subject)}${q.deckName ? `<span class="chip">${esc(q.deckName)}</span>` : ''}${topicChip}<span class="chip">Schwierigkeit ${'●'.repeat(q.difficulty)}${'○'.repeat(3 - q.difficulty)}</span></div>
         ${questionStage(q)}
         <p class="question-text${q.question.length > 160 ? ' long' : ''}">${esc(q.question)}</p>`;
 
@@ -859,7 +974,8 @@
         ${q.explanation ? `<div class="panel info"><h3>Einfach erklärt</h3><p>${esc(q.explanation)}</p></div>` : ''}
         ${q.example ? `<div class="panel"><h3>Praxisbeispiel</h3><p>${esc(q.example)}</p></div>` : ''}
         ${q.note ? `<div class="panel warn"><h3>Hinweis</h3><p>${esc(q.note)}</p></div>` : ''}
-        <details class="disclosure" open><summary>Musterantwort</summary><p class="pre-line">${esc(q.modelAnswer)}</p>
+        <details class="disclosure" open><summary>${q.collection === 'karteikarten' ? 'Antwort (Rückseite der Karte)' : 'Musterantwort'}</summary><p class="pre-line">${esc(q.modelAnswer)}</p>
+          ${answerFigureStage(q)}
           <p class="small muted">Kernpunkte: ${q.keyPoints.map(p => esc(p.label)).join(' · ')}</p>
           ${q.source ? `<p class="small muted">Quelle der Frage: ${esc(q.source)}</p>` : ''}
           ${renderAnswerSources(q)}</details>

@@ -269,6 +269,8 @@ a { color: var(--primary); }
 .btn.warn { background: var(--warn-soft); border-color: transparent; color: var(--warn); }
 .btn.bad { background: var(--bad-soft); border-color: transparent; color: var(--bad); }
 .btn.block { width: 100%; }
+.btn.small-btn { min-height: 36px; padding: 6px 12px; font-size: .88rem; }
+.section-title .btn { flex-shrink: 0; }
 
 :focus-visible { outline: 3px solid var(--primary); outline-offset: 2px; }
 
