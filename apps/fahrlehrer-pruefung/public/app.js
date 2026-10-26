@@ -457,6 +457,7 @@
   }
 
   function questionStage(q) {
+    if (q && q.collection === 'karteikarten') return cardFigureStage(q.figures);
     return signStage(q) + figureStage(q);
   }
 
@@ -826,15 +827,38 @@
 
   function flashcardListItem(q, ts) {
     const mastery = Core.questionMastery(state.attempts[q.id], ts);
-    const firstLine = q.question.split('\n')[0];
-    const preview = firstLine.length > 180 ? `${firstLine.slice(0, 177)} …` : firstLine;
+    const oneLine = q.question.replace(/\s*\n+\s*/g, ' ').trim();
+    const preview = oneLine.length > 180 ? `${oneLine.slice(0, 177)} …` : oneLine;
     return `<li><div><a href="#/frage/${esc(q.id)}">${esc(preview)}</a><div class="small muted">Karte ${esc(q.card)} von ${esc(q.cardOf)}</div></div>${levelChip(mastery)}</li>`;
   }
 
-  // Abbildungen der Kartenrückseite: erst nach der Antwort sichtbar.
-  function answerFigureStage(q) {
-    if (!Array.isArray(q.answerFigures) || q.answerFigures.length === 0) return '';
-    return figureStage({ figures: q.answerFigures });
+  // Fotos der Karteikarten in voller Breite; Antippen öffnet die Vergrößerung.
+  function cardFigureStage(figures) {
+    if (!Array.isArray(figures) || figures.length === 0) return '';
+    return `<div class="card-figures">${figures.map(f => `<figure>
+      <button type="button" class="figure-zoom" data-action="zoom-figure" aria-label="Abbildung vergrößern"><img src="${esc(f.src)}" alt="${esc(f.alt || 'Abbildung der Karte')}" loading="lazy" decoding="async"></button>
+      ${f.label ? `<figcaption>${esc(f.label)} – zum Vergrößern antippen</figcaption>` : ''}</figure>`).join('')}</div>`;
+  }
+
+  function openFigureZoom(img) {
+    const overlay = document.createElement('div');
+    overlay.className = 'figure-overlay';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-label', 'Vergrößerte Abbildung – zum Schließen antippen');
+    const big = document.createElement('img');
+    big.src = img.src;
+    big.alt = img.alt;
+    overlay.appendChild(big);
+    const close = () => {
+      overlay.remove();
+      document.removeEventListener('keydown', onKey);
+    };
+    const onKey = event => {
+      if (event.key === 'Escape') close();
+    };
+    overlay.addEventListener('click', close);
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(overlay);
   }
 
   function renderSignCatalog(ts) {
@@ -975,7 +999,7 @@
         ${q.example ? `<div class="panel"><h3>Praxisbeispiel</h3><p>${esc(q.example)}</p></div>` : ''}
         ${q.note ? `<div class="panel warn"><h3>Hinweis</h3><p>${esc(q.note)}</p></div>` : ''}
         <details class="disclosure" open><summary>${q.collection === 'karteikarten' ? 'Antwort (Rückseite der Karte)' : 'Musterantwort'}</summary><p class="pre-line">${esc(q.modelAnswer)}</p>
-          ${answerFigureStage(q)}
+          ${cardFigureStage(q.answerFigures)}
           <p class="small muted">Kernpunkte: ${q.keyPoints.map(p => esc(p.label)).join(' · ')}</p>
           ${q.source ? `<p class="small muted">Quelle der Frage: ${esc(q.source)}</p>` : ''}
           ${renderAnswerSources(q)}</details>
@@ -1538,6 +1562,7 @@
       const ids = questions.filter(q => q.subject === el.dataset.subject && q.topic === el.dataset.topic).map(q => q.id);
       startPractice(ids, el.dataset.topic);
     },
+    'zoom-figure': el => openFigureZoom(el.querySelector('img')),
     'practice-ids': el => startPractice(el.dataset.ids.split(','), el.dataset.title || 'Wiederholung'),
     'practice-signs': el => {
       const group = SIGN_GROUPS.find(g => g.id === el.dataset.group) || null;

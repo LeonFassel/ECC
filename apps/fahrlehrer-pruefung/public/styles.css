@@ -430,3 +430,13 @@ th { color: var(--muted); font-weight: 650; border-top: 0; }
 .back-arrow svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
 .back-arrow:hover { border-color: var(--primary); color: var(--primary); }
 .back-arrow:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+/* Karteikarten: Fotos der Karten in voller Breite, Vergrößerung per Antippen */
+.card-figures { display: grid; gap: 12px; margin: 14px 0 6px; }
+.card-figures figure { margin: 0; }
+.figure-zoom { display: block; width: 100%; padding: 0; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--surface-2); cursor: zoom-in; }
+.figure-zoom img { display: block; width: 100%; height: auto; }
+.card-figures figcaption { font-size: .8rem; color: var(--muted); margin-top: 6px; text-align: center; }
+.figure-overlay { position: fixed; inset: 0; z-index: 1000; background: rgba(10, 14, 24, .92); overflow: auto; cursor: zoom-out; display: flex; align-items: flex-start; justify-content: flex-start; }
+.figure-overlay img { display: block; margin: auto; width: max(100%, 1000px); max-width: none; height: auto; }
+@media (min-width: 1100px) { .figure-overlay img { width: auto; max-width: 100%; } }
