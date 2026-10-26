@@ -804,6 +804,7 @@
     const cards = deckCards(deck.id);
     const levels = cardStats(cards, ts);
     const weak = weakIds(cards, ts);
+    const choiceIds = cards.filter(hasChoice).map(q => q.id);
     const topics = deckTopics(cards);
     return `
       <header class="page-head">
@@ -815,6 +816,7 @@
         <p class="small muted">Sicher: ${levels.sicher} · Ausbaufähig: ${levels.mittel} · Schwach: ${levels.schwach} · Offen: ${levels.offen}</p>
         <div class="btn-row">
           <button class="btn primary" data-action="practice-ids" data-title="Karteikarten – ${esc(deck.name)}" data-ids="${esc(cards.map(q => q.id).join(','))}">Alle ${cards.length} Karten üben</button>
+          ${choiceIds.length ? `<button class="btn" data-action="practice-ids" data-title="Karteikarten – ${esc(deck.name)} – Ankreuzen" data-ids="${esc(choiceIds.join(','))}">Nur Ankreuz-Karten (${choiceIds.length})</button>` : ''}
           <button class="btn" data-action="practice-ids" data-title="Karteikarten – ${esc(deck.name)} – Schwächen" data-ids="${esc(weak.join(','))}" ${weak.length ? '' : 'disabled'}>Nur Schwächen</button>
         </div>
       </div>
@@ -829,7 +831,7 @@
     const mastery = Core.questionMastery(state.attempts[q.id], ts);
     const oneLine = q.question.replace(/\s*\n+\s*/g, ' ').trim();
     const preview = oneLine.length > 180 ? `${oneLine.slice(0, 177)} …` : oneLine;
-    return `<li><div><a href="#/frage/${esc(q.id)}">${esc(preview)}</a><div class="small muted">Karte ${esc(q.card)} von ${esc(q.cardOf)}</div></div>${levelChip(mastery)}</li>`;
+    return `<li><div><a href="#/frage/${esc(q.id)}">${esc(preview)}</a><div class="small muted">Karte ${esc(q.card)} von ${esc(q.cardOf)}${hasChoice(q) ? ' · <span class="chip">Ankreuzen</span>' : ''}</div></div>${levelChip(mastery)}</li>`;
   }
 
   // Fotos der Karteikarten in voller Breite; Antippen öffnet die Vergrößerung.
@@ -979,6 +981,8 @@
         ${questionStage(q)}
         <p class="question-text${q.question.length > 160 ? ' long' : ''}">${esc(q.question)}</p>`;
 
+    if (hasChoice(q)) return `${head}${renderChoice(q, reviewing)}`;
+
     if (!reviewing) {
       return `${head}
         <label for="answer" class="kpi-label">Ihre Antwort – tippen oder einsprechen</label>
@@ -1014,6 +1018,95 @@
       </div>`;
   }
 
+  // ------------------------------------------------------------------ Multiple Choice (Karteikarten)
+
+  function hasChoice(q) {
+    return Boolean(q && q.mc && Array.isArray(q.mc.options) && q.mc.options.length > 0);
+  }
+
+  /** Ankreuz-Zustand der aktuellen Frage; die Reihenfolge der Antworten wird je Frage einmal gemischt. */
+  function currentChoice(q) {
+    if (!practice.choice || practice.choice.id !== q.id) {
+      practice.choice = { id: q.id, order: shuffled(q.mc.options.map((_, i) => i)), selected: [], result: null };
+    }
+    return practice.choice;
+  }
+
+  const CHECK_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+  const CROSS_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg>';
+
+  function choiceOption(q, choice, index, reviewing) {
+    const option = q.mc.options[index];
+    const checked = choice.selected.includes(index);
+    if (!reviewing) {
+      return `<button type="button" class="mc-option${checked ? ' checked' : ''}" role="checkbox" aria-checked="${checked}" data-action="toggle-choice" data-index="${index}">
+        <span class="mc-box">${checked ? CHECK_ICON : ''}</span><span>${esc(option.text)}</span></button>`;
+    }
+    // Nach dem Auflösen: richtig/falsch markieren und zeigen, was angekreuzt war.
+    const state = option.correct ? (checked ? 'hit' : 'missed') : (checked ? 'wrong' : 'ok');
+    const note = { hit: 'richtig angekreuzt', missed: 'richtig – nicht angekreuzt', wrong: 'falsch – angekreuzt', ok: 'falsch' }[state];
+    return `<div class="mc-option result ${state}">
+        <span class="mc-box${checked ? ' ticked' : ''}">${checked ? CHECK_ICON : ''}</span>
+        <span class="mc-text">${esc(option.text)}<span class="mc-note">${option.correct ? CHECK_ICON : CROSS_ICON}${note}</span></span></div>`;
+  }
+
+  function renderChoice(q, reviewing) {
+    const choice = currentChoice(q);
+    const options = choice.order.map(index => choiceOption(q, choice, index, reviewing)).join('');
+    if (!reviewing) {
+      return `
+        <p class="mc-prompt">${esc(q.mc.prompt)}</p>
+        <p class="small muted">Eine oder mehrere Antworten können richtig sein.</p>
+        <div class="mc-list">${options}</div>
+        <div class="btn-row"><button class="btn primary" data-action="check-choice">Lösung anzeigen</button></div>
+        ${practiceNav()}
+      </div>`;
+    }
+    const result = choice.result;
+    return `
+        <p class="mc-prompt">${esc(q.mc.prompt)}</p>
+        <div class="panel ${result.exact ? 'good' : result.score >= 0.5 ? 'warn' : 'bad'}"><h3>${result.exact ? 'Richtig!' : 'Nicht ganz richtig'}</h3><p>${esc(result.feedback)}</p></div>
+        <div class="mc-list">${options}</div>
+        <details class="disclosure"><summary>Antwort (Rückseite der Karte)</summary><p class="pre-line">${esc(q.modelAnswer)}</p>
+          ${cardFigureStage(q.answerFigures)}
+          ${q.source ? `<p class="small muted">Quelle der Frage: ${esc(q.source)}</p>` : ''}</details>
+        ${q.note ? `<div class="panel warn"><h3>Hinweis</h3><p>${esc(q.note)}</p></div>` : ''}
+        <div class="btn-row"><button class="btn primary" data-action="next-choice">${practice.index >= practice.queue.length - 1 ? 'Übung abschließen' : 'Weiter'}</button></div>
+        ${practiceNav()}
+      </div>`;
+  }
+
+  function toggleChoice(index) {
+    const q = questionById.get(practice.queue[practice.index]);
+    const choice = currentChoice(q);
+    choice.selected = choice.selected.includes(index) ? choice.selected.filter(i => i !== index) : choice.selected.concat(index);
+    render();
+  }
+
+  function checkChoice() {
+    const q = questionById.get(practice.queue[practice.index]);
+    const choice = currentChoice(q);
+    choice.result = Core.evaluateChoice(q, choice.selected);
+    practice.phase = 'review';
+    state = Core.markSeen(state, q.id, now());
+    saveState();
+    render();
+  }
+
+  function finishChoice() {
+    const q = questionById.get(practice.queue[practice.index]);
+    const result = practice.choice && practice.choice.result;
+    if (!result) return;
+    state = Core.recordAttempt(state, q.id, { score: result.score, source: 'choice', missed: result.missedLabels }, now());
+    saveState();
+    practice.results = practice.results.filter(r => r.questionId !== q.id);
+    practice.results.push({ questionId: q.id, score: result.score });
+    practice.index += 1;
+    resetPracticeAnswer();
+    render();
+    app.focus();
+  }
+
   // Zurück zur vorigen Frage oder diese Frage ohne Bewertung überspringen.
   function practiceNav() {
     const multi = practice.queue.length > 1;
@@ -1032,6 +1125,7 @@
     practice.ai = null;
     practice.aiError = null;
     practice.aiLoading = false;
+    practice.choice = null;
   }
 
   function moveInPractice(step) {
@@ -1562,6 +1656,9 @@
       const ids = questions.filter(q => q.subject === el.dataset.subject && q.topic === el.dataset.topic).map(q => q.id);
       startPractice(ids, el.dataset.topic);
     },
+    'toggle-choice': el => toggleChoice(Number(el.dataset.index)),
+    'check-choice': () => checkChoice(),
+    'next-choice': () => finishChoice(),
     'zoom-figure': el => openFigureZoom(el.querySelector('img')),
     'practice-ids': el => startPractice(el.dataset.ids.split(','), el.dataset.title || 'Wiederholung'),
     'practice-signs': el => {

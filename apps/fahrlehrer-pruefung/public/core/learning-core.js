@@ -161,6 +161,34 @@
     return { score, covered, missing, wrong, words, feedback: buildFeedback(score, missing, wrong) };
   }
 
+  /**
+   * Multiple Choice (Karteikarten): selected sind die Indizes der angekreuzten Optionen
+   * in question.mc.options. Volle Punktzahl nur, wenn genau die richtigen angekreuzt sind;
+   * sonst Anteil der erkannten richtigen Optionen abzüglich falsch angekreuzter.
+   */
+  function evaluateChoice(question, selected) {
+    const options = (question.mc && question.mc.options) || [];
+    const chosen = new Set((selected || []).filter(i => Number.isInteger(i) && i >= 0 && i < options.length));
+    const correct = options.map((o, i) => (o.correct ? i : -1)).filter(i => i >= 0);
+    const hits = correct.filter(i => chosen.has(i));
+    const wrong = Array.from(chosen).filter(i => !options[i].correct).sort((a, b) => a - b);
+    const missed = correct.filter(i => !chosen.has(i));
+    const exact = wrong.length === 0 && missed.length === 0;
+    const partial = correct.length ? (hits.length - wrong.length) / correct.length : 0;
+    const score = exact ? 1 : round2(clamp(Math.min(partial, 0.9), 0, 1));
+    return {
+      score,
+      exact,
+      hits,
+      wrong,
+      missed,
+      missedLabels: missed.map(i => options[i].text),
+      feedback: exact
+        ? 'Alles richtig angekreuzt.'
+        : `${hits.length} von ${correct.length} richtigen Antworten erkannt${wrong.length ? `, ${wrong.length} falsch angekreuzt` : ''}.`
+    };
+  }
+
   function buildFeedback(score, missing, wrong) {
     const wrongNote = wrong && wrong.length ? ' Achtung: Ein Teil Ihrer Aussage ist fachlich falsch – siehe unten.' : '';
     if (score >= 0.85) return `Sehr gut – Sie haben die wesentlichen Punkte genannt.${wrongNote}`;
@@ -562,6 +590,7 @@
     dateKey,
     normalize,
     evaluateAnswer,
+    evaluateChoice,
     combineScores,
     recordAttempt,
     markSeen,

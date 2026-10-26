@@ -129,6 +129,37 @@ function runTests() {
     }
   }));
 
+  results.push(test('multiple choice scores exact answers fully and penalises wrong ticks', () => {
+    const item = { mc: { prompt: 'Welche?', options: [
+      { text: 'A', correct: true }, { text: 'B', correct: false }, { text: 'C', correct: true }, { text: 'D', correct: false }
+    ] } };
+    const exact = Core.evaluateChoice(item, [2, 0]);
+    assert.strictEqual(exact.score, 1);
+    assert.ok(exact.exact);
+    const half = Core.evaluateChoice(item, [0]);
+    assert.strictEqual(half.score, 0.5);
+    assert.deepStrictEqual(half.missedLabels, ['C']);
+    const mixed = Core.evaluateChoice(item, [0, 2, 1]);
+    assert.ok(!mixed.exact && mixed.score < 1, 'a wrong tick is never full marks');
+    assert.deepStrictEqual(mixed.wrong, [1]);
+    assert.strictEqual(Core.evaluateChoice(item, []).score, 0);
+    assert.strictEqual(Core.evaluateChoice(item, [1, 3]).score, 0);
+    assert.strictEqual(Core.evaluateChoice(item, [9, -1]).score, 0, 'invalid indices are ignored');
+  }));
+
+  results.push(test('multiple choice cards have a prompt, right and wrong options', () => {
+    for (const item of data.questions.filter(x => x.mc)) {
+      assert.strictEqual(item.collection, 'karteikarten', `${item.id} multiple choice only for flashcards`);
+      assert.ok(/\?$/.test(item.mc.prompt), `${item.id} prompt`);
+      const options = item.mc.options;
+      assert.ok(options.length >= 4 && options.length <= 8, `${item.id} option count`);
+      assert.ok(options.filter(o => o.correct).length >= 1, `${item.id} needs a right option`);
+      assert.ok(options.filter(o => !o.correct).length >= 2, `${item.id} needs wrong options`);
+      const texts = options.map(o => o.text.toLowerCase());
+      assert.strictEqual(new Set(texts).size, texts.length, `${item.id} duplicate options`);
+    }
+  }));
+
   results.push(test('question bank includes the uploaded exam and technology questions', () => {
     assert.strictEqual(data.questions.filter(x => x.id.startsWith('mp-')).length, 38);
     assert.ok(data.questions.filter(x => x.id.startsWith('tk-')).length >= 35);

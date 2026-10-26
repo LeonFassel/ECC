@@ -442,3 +442,25 @@ th { color: var(--muted); font-weight: 650; border-top: 0; }
 .figure-overlay { position: fixed; inset: 0; z-index: 1000; background: rgba(10, 14, 24, .92); overflow: auto; cursor: zoom-out; display: flex; align-items: flex-start; justify-content: flex-start; }
 .figure-overlay img { display: block; margin: auto; width: max(100%, 1000px); max-width: none; height: auto; }
 @media (min-width: 1100px) { .figure-overlay img { width: auto; max-width: 100%; } }
+
+/* Multiple Choice (Karteikarten) */
+.mc-prompt { font-weight: 650; margin: 4px 0 2px; }
+.mc-list { display: grid; gap: 10px; margin: 12px 0 4px; }
+.mc-option { appearance: none; display: flex; align-items: flex-start; gap: 12px; width: 100%; text-align: left; font: inherit; color: var(--text); background: var(--surface); border: 1.5px solid var(--border); border-radius: 12px; padding: 12px 14px; min-height: 48px; line-height: 1.4; }
+button.mc-option { cursor: pointer; }
+button.mc-option:hover { background: var(--surface-2); }
+.mc-option.checked { border-color: var(--primary); background: var(--primary-soft); }
+.mc-box { flex: 0 0 24px; width: 24px; height: 24px; border: 2px solid var(--muted); border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; background: var(--surface); margin-top: -1px; }
+.mc-option.checked .mc-box, .mc-box.ticked { border-color: var(--primary); background: var(--primary); }
+.mc-box svg, .mc-note svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.mc-option.checked .mc-box svg, .mc-box.ticked svg { color: var(--on-primary); }
+.mc-text { display: flex; flex-direction: column; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+.mc-note { display: inline-flex; align-items: center; gap: 4px; font-size: .8rem; font-weight: 700; }
+.mc-option.result.hit, .mc-option.result.missed { border-color: var(--good); background: var(--good-soft); }
+.mc-option.result.missed { border-style: dashed; }
+.mc-option.result.wrong { border-color: var(--bad); background: var(--bad-soft); }
+.mc-option.result.ok { opacity: .75; }
+.mc-option.result.hit .mc-note, .mc-option.result.missed .mc-note { color: var(--good); }
+.mc-option.result.wrong .mc-note, .mc-option.result.ok .mc-note { color: var(--bad); }
+.mc-option.result.wrong .mc-box.ticked { border-color: var(--bad); background: var(--bad); }
+.mc-option.result.hit .mc-box.ticked { border-color: var(--good); background: var(--good); }
