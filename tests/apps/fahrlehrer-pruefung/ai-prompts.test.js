@@ -38,6 +38,12 @@ function runTests() {
     assert.ok(brief.includes('Typische Fehler'));
   }));
 
+  results.push(test('flashcard briefs grade against the back of the card', () => {
+    const card = Object.assign({}, plain, { id: 'kk-p-002', collection: 'karteikarten', deckName: 'Pädagogik' });
+    assert.ok(Prompts.questionBrief(card).includes('Rückseite der Lernkarte'));
+    assert.ok(!Prompts.questionBrief(plain).includes('Rückseite der Lernkarte'));
+  }));
+
   results.push(test('evaluation prompt contains instructions, answer and JSON format', () => {
     const prompt = Prompts.evaluationPrompt(plain, 'Antwort <b>');
     assert.ok(prompt.includes(Prompts.EVALUATION_SYSTEM));
