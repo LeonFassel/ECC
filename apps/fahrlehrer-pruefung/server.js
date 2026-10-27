@@ -15,10 +15,14 @@ const fs = require('fs');
 const path = require('path');
 
 const data = require('./public/data/questions.js');
+const written = require('./public/data/questions-schriftlich.js');
 const { createAiService, loadDefaultClient, AiResponseError, MODEL } = require('./lib/ai-examiner');
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const MAX_BODY_BYTES = 64 * 1024;
+// Korrektur der schriftlichen Prüfung: Fotos der Antwortblätter (JPEG, base64).
+const MAX_WRITTEN_BODY_BYTES = 40 * 1024 * 1024;
+const MAX_WRITTEN_PAGES = 40;
 const MAX_EXAM_QUESTIONS = 8;
 
 const MIME_TYPES = {
@@ -31,6 +35,7 @@ const MIME_TYPES = {
 };
 
 const questionById = new Map(data.questions.map(q => [q.id, q]));
+const writtenById = new Map(((written && written.exams) || []).map(exam => [exam.id, exam]));
 
 function sendJson(res, status, payload) {
   const body = JSON.stringify(payload);
@@ -42,13 +47,14 @@ function sendJson(res, status, payload) {
   res.end(body);
 }
 
-function readJsonBody(req) {
+function readJsonBody(req, limit) {
+  const maxBytes = limit || MAX_BODY_BYTES;
   return new Promise((resolve, reject) => {
     let size = 0;
     const chunks = [];
     req.on('data', chunk => {
       size += chunk.length;
-      if (size > MAX_BODY_BYTES) {
+      if (size > maxBytes) {
         reject(Object.assign(new Error('Anfrage zu groß.'), { status: 413 }));
         req.destroy();
         return;
@@ -118,7 +124,7 @@ function createAppServer(options) {
       return;
     }
 
-    const body = await readJsonBody(req);
+    const body = await readJsonBody(req, pathname === '/api/written-grade' ? MAX_WRITTEN_BODY_BYTES : MAX_BODY_BYTES);
 
     if (pathname === '/api/evaluate') {
       const question = questionById.get(body.questionId);
@@ -142,6 +148,19 @@ function createAppServer(options) {
         return;
       }
       sendJson(res, 200, await ai.examine(questions, history));
+      return;
+    }
+
+    if (pathname === '/api/written-grade') {
+      const exam = writtenById.get(body.examId);
+      const images = Array.isArray(body.images)
+        ? body.images.filter(img => img && /^image\/(jpeg|png)$/.test(img.mediaType) && typeof img.data === 'string' && /^[A-Za-z0-9+/=]+$/.test(img.data))
+        : [];
+      if (!exam || images.length === 0 || images.length > MAX_WRITTEN_PAGES) {
+        sendJson(res, 400, { error: `examId und 1 bis ${MAX_WRITTEN_PAGES} Antwortblätter sind erforderlich.` });
+        return;
+      }
+      sendJson(res, 200, await ai.gradeWritten(exam, images.map(img => ({ mediaType: img.mediaType, data: img.data }))));
       return;
     }
 

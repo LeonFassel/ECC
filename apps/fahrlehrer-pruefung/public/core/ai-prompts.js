@@ -110,6 +110,96 @@
     return messages;
   }
 
+  // ------------------------------------------------------------------ Schriftliche Prüfung
+
+  const MAX_WRITTEN_TASK_CHARS = 2500;
+
+  /** Notenstufen nach § 19 FahrlPrüfV. */
+  const GRADES = [
+    { grade: 1, label: 'sehr gut', text: 'eine Leistung, die den Anforderungen in besonderem Maße entspricht' },
+    { grade: 2, label: 'gut', text: 'eine Leistung, die den Anforderungen voll entspricht' },
+    { grade: 3, label: 'befriedigend', text: 'eine Leistung, die im Allgemeinen den Anforderungen entspricht' },
+    { grade: 4, label: 'ausreichend', text: 'eine Leistung, die zwar Mängel aufweist, aber im Ganzen den Anforderungen noch entspricht' },
+    { grade: 5, label: 'mangelhaft', text: 'eine Leistung, die den Anforderungen nicht entspricht, jedoch erkennen lässt, dass die notwendigen Grundkenntnisse vorhanden sind und die Mängel in absehbarer Zeit behoben werden können' },
+    { grade: 6, label: 'ungenügend', text: 'eine Leistung, die den Anforderungen nicht entspricht und bei der selbst die Grundkenntnisse so lückenhaft sind, dass die Mängel in absehbarer Zeit nicht behoben werden können' }
+  ];
+
+  const WRITTEN_SYSTEM = [
+    'Du bist Mitglied eines Prüfungsausschusses für die Fahrlehrerprüfung (Fahrlehrerlaubnisklasse BE) in Deutschland und korrigierst den schriftlichen Teil der Fachkundeprüfung.',
+    'Die Bilder zeigen die handschriftlichen Antwortblätter des Prüflings (kariertes A4-Papier, in Reihenfolge Seite 1, 2, …). Lies die Handschrift sorgfältig, ordne die Antworten über Nummern, Überschriften und Inhalt den Aufgaben zu.',
+    'Bewerte jeden Prüfungsteil (Fach) einzeln, fachlich korrekt nach aktuellem deutschem Recht (StVO, StVG, FeV, FahrlG, FahrschAusbO, FahrlPrüfV, StVZO) und Fachwissen für Fahrlehrer. Gleichwertige Formulierungen und Stichpunkte zählen, Rechtschreibung nicht. Fehlende oder unleserliche Antworten zählen nicht als richtig.',
+    `Noten nach § 19 FahrlPrüfV: ${GRADES.map(g => `${g.grade} = ${g.label} (${g.text})`).join('; ')}.`,
+    'Richtwert für die Note aus dem Anteil der erreichten Leistung (percent): ab 92 % = 1, ab 81 % = 2, ab 67 % = 3, ab 50 % = 4, ab 30 % = 5, darunter 6. Ganze Noten vergeben.',
+    'Für jede Aufgabe: found = ob eine Antwort zu finden ist, score 0 bis 1, comment = 1–2 Sätze (was richtig war, was fehlt oder falsch ist, mit kurzer Richtigstellung).',
+    'Je Fach: summary (2–3 Sätze), strengths und gaps (kurze Stichpunkte). Gesamt: summary mit ehrlicher Einschätzung und den wichtigsten Lernempfehlungen.',
+    'readability: kurzer Hinweis, falls Stellen nicht lesbar waren (sonst leer). Schreibe auf Deutsch und sprich den Prüfling mit „Sie“ an.'
+  ].join('\n');
+
+  const WRITTEN_FORMAT = 'Antworte ausschließlich mit einem JSON-Objekt dieser Form: {"parts": [{"name": string, "percent": 0-100, "grade": 1-6, "summary": string, "strengths": [string], "gaps": [string], "tasks": [{"label": string, "found": boolean, "score": 0.0-1.0, "comment": string}]}], "summary": string, "readability": string}. Die Teile in derselben Reihenfolge und mit genau denselben Namen wie in der Prüfung.';
+
+  /** Aufgabentext der schriftlichen Prüfung für die Korrektur (ohne Bilder der Aufgaben). */
+  function writtenExamText(exam, pageCount) {
+    const parts = exam.parts.map((part, i) => {
+      const tasks = part.tasks.map(task => {
+        const label = task.label ? `${task.label} ` : '';
+        const figures = task.figures && task.figures.length ? ` [Abbildung: ${task.figures.map(f => f.alt || 'Abbildung').join('; ')}]` : '';
+        return `- ${label}${clampText(task.text, MAX_WRITTEN_TASK_CHARS)}${figures}`;
+      }).join('\n');
+      return `## Teil ${i + 1}: ${part.name}\n${part.intro ? `${clampText(part.intro, MAX_WRITTEN_TASK_CHARS)}\n` : ''}${tasks}`;
+    }).join('\n\n');
+    return `Prüfung: ${exam.name || exam.title}\n\n${parts}\n\nDer Prüfling hat ${pageCount} Antwortblatt/-blätter abgegeben (Bilder in dieser Reihenfolge). Bewerte jetzt.`;
+  }
+
+  /** Ein einziger Prompt für Umgebungen ohne System-Prompt (claude.ai). */
+  function writtenGradingPrompt(exam, pageCount) {
+    return `${WRITTEN_SYSTEM}\n\n${writtenExamText(exam, pageCount)}\n\n${WRITTEN_FORMAT}`;
+  }
+
+  function gradeLabel(grade) {
+    const g = GRADES.find(x => x.grade === Math.round(grade));
+    return g ? g.label : '';
+  }
+
+  /**
+   * Bewertung der KI auf die Teile der Prüfung abbilden. Noten werden auf 1–6
+   * begrenzt; die Gesamtnote ist der Durchschnitt der Fächer (eine Nachkommastelle).
+   */
+  function normalizeWrittenGrading(data, exam) {
+    const d = data && typeof data === 'object' ? data : {};
+    const raw = Array.isArray(d.parts) ? d.parts : [];
+    const parts = exam.parts.map((part, i) => {
+      const match = raw.find(p => p && String(p.name || '').trim() === part.name) || raw[i] || {};
+      const percent = Math.round(Math.min(100, Math.max(0, Number(match.percent) || 0)));
+      const rawGrade = Number(match.grade);
+      const grade = Number.isFinite(rawGrade) ? Math.round(Math.min(6, Math.max(1, rawGrade))) : 6;
+      return {
+        name: part.name,
+        percent,
+        grade,
+        label: gradeLabel(grade),
+        summary: String(match.summary || ''),
+        strengths: strings(match.strengths),
+        gaps: strings(match.gaps),
+        tasks: (Array.isArray(match.tasks) ? match.tasks : []).filter(t => t && typeof t === 'object').map(t => ({
+          label: String(t.label || ''),
+          found: Boolean(t.found),
+          score: normalizeScore(t.score),
+          comment: String(t.comment || '')
+        }))
+      };
+    });
+    const average = parts.length ? Math.round((parts.reduce((sum, p) => sum + p.grade, 0) / parts.length) * 10) / 10 : 6;
+    return {
+      parts,
+      average,
+      averageLabel: gradeLabel(average),
+      // Orientierung: jedes Fach mindestens „ausreichend“.
+      passed: parts.length > 0 && parts.every(p => p.grade <= 4),
+      summary: String(d.summary || ''),
+      readability: String(d.readability || '')
+    };
+  }
+
   function normalizeScore(value) {
     const n = Number(value);
     if (!Number.isFinite(n)) return 0;
@@ -157,6 +247,13 @@
     examinerPlan,
     examinerMessages,
     normalizeEvaluation,
-    normalizeExaminerTurn
+    normalizeExaminerTurn,
+    GRADES,
+    WRITTEN_SYSTEM,
+    WRITTEN_FORMAT,
+    writtenExamText,
+    writtenGradingPrompt,
+    gradeLabel,
+    normalizeWrittenGrading
   };
 });

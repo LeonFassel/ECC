@@ -190,6 +190,50 @@
     return 'Die KI ist gerade nicht erreichbar. Bitte erneut versuchen.';
   }
 
+  function blobToBase64(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  /** Wie viele Antwortblätter (Bilder) in eine Bewertung passen. */
+  async function aiMaxImages() {
+    if (aiStatus.mode === 'sample' && sampleFn && typeof sampleFn.limits === 'function') {
+      const limits = await sampleFn.limits().catch(() => null);
+      return limits && limits.images ? Math.max(1, limits.images.maxCount) : 0;
+    }
+    return 40;
+  }
+
+  /** Schriftliche Prüfung: Fotos der Antwortblätter von Claude benoten lassen. */
+  async function aiGradeWritten(exam, blobs) {
+    if (aiStatus.mode === 'sample') {
+      if ((await aiMaxImages()) === 0) {
+        throw new Error('Hier kann Claude keine Bilder lesen. Öffnen Sie die App in der aktuellen Claude-App oder nutzen Sie die Website mit eigenem API-Schlüssel.');
+      }
+      try {
+        const data = await sampleFn.json(Prompts.writtenGradingPrompt(exam, blobs.length), { images: blobs, modelTier: 'complex', cache: false });
+        return Prompts.normalizeWrittenGrading(data, exam);
+      } catch (err) {
+        if (err && err.code === 'images_unavailable') throw new Error('Hier kann Claude keine Bilder lesen.');
+        throw new Error(sampleErrorMessage(err));
+      }
+    }
+    const images = await Promise.all(blobs.map(async blob => ({ mediaType: blob.type || 'image/jpeg', data: await blobToBase64(blob) })));
+    if (aiStatus.mode === 'server') return postJson('api/written-grade', { examId: exam.id, images });
+    if (aiStatus.mode === 'apikey') {
+      try {
+        return await apiService.gradeWritten(exam, images);
+      } catch (err) {
+        throw new Error(apiErrorMessage(err));
+      }
+    }
+    throw new Error('Die KI ist nicht verfügbar.');
+  }
+
   async function aiEvaluate(question, answer) {
     if (aiStatus.mode === 'server') return postJson('api/evaluate', { questionId: question.id, answer });
     if (aiStatus.mode === 'apikey') {
@@ -511,7 +555,7 @@
     document.querySelectorAll('[data-nav]').forEach(a => {
       const active = a.dataset.nav === r.name
         || (a.dataset.nav === 'faecher' && (r.name === 'fach' || r.name === 'sammlung' || r.name === 'stapel'))
-        || (a.dataset.nav === 'pruefung' && r.name === 'schriftlich');
+        || (a.dataset.nav === 'pruefung' && (r.name === 'schriftlich' || r.name === 'ergebnis'));
       a.classList.toggle('active', active);
       if (active) a.setAttribute('aria-current', 'page');
       else a.removeAttribute('aria-current');
@@ -528,6 +572,7 @@
       ueben: renderPractice,
       pruefung: renderExam,
       schriftlich: () => WrittenUI.render(r.param),
+      ergebnis: () => WrittenUI.renderResult(r.param),
       analyse: renderAnalysis,
       einstellungen: renderSettings
     };
@@ -1745,7 +1790,18 @@
   };
 
   // Schriftliche Prüfung (Arbeitsplatz mit Timer, Fragen und kariertem Papier).
-  Object.assign(actions, WrittenUI.init({ esc, toast }));
+  Object.assign(actions, WrittenUI.init({
+    esc,
+    toast,
+    go,
+    rerender: () => render(),
+    ai: {
+      available: () => aiStatus.ai,
+      maxImages: aiMaxImages,
+      grade: aiGradeWritten,
+      errorText: err => String((err && err.message) || 'Die Bewertung ist fehlgeschlagen.')
+    }
+  }));
 
   // Zweistufige Bestätigung direkt im Button (Browser-Dialoge sind nicht überall erlaubt).
   function needsConfirmation(el) {

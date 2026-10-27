@@ -522,7 +522,8 @@ body.ws-active .main { margin: 0; max-width: none; padding: 0; }
 .ws[data-tool="pen"] .ink-live, .ws[data-tool="marker"] .ink-live { cursor: crosshair; }
 .ws[data-tool="eraser"] .ink-live { cursor: cell; }
 .ws-pages { display: grid; gap: 4px; }
-.ws-page-wrap { max-width: 900px; width: 100%; margin: 0 auto; }
+.ws-page-wrap { width: calc(100% * var(--paper-zoom, 1)); max-width: calc(900px * var(--paper-zoom, 1)); margin: 0 auto; }
+.ws-pages, .ws-qsheets { transform-origin: 0 0; }
 .ws-page { position: relative; width: 100%; aspect-ratio: 210 / 297; background-color: #fff; background-image: linear-gradient(to right, #c9d4e3 1px, transparent 1px), linear-gradient(to bottom, #c9d4e3 1px, transparent 1px); background-size: calc(100% / 42) calc(100% / 59.4); box-shadow: var(--shadow); }
 .ws-page-foot { display: flex; justify-content: space-between; padding: 6px 2px 14px; font-size: .85rem; color: var(--muted); }
 .ws-add-page { display: flex; margin: 0 auto 24px; }
@@ -530,3 +531,20 @@ body.ws-active .main { margin: 0; max-width: none; padding: 0; }
   .ws-title .small { display: none; }
   .ws-timer-main span { display: none; }
 }
+
+.ws-submit { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+.ws-zoom { min-width: 64px; font-variant-numeric: tabular-nums; }
+.ws-grading { display: flex; gap: 16px; align-items: center; }
+.ws-grading h2 { margin-bottom: 4px; }
+.ws-result-head { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
+.ws-grade-big { display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 120px; padding: 14px 18px; border-radius: 16px; background: var(--surface-2); }
+.ws-grade-big span { font-size: 2.2rem; font-weight: 800; line-height: 1.1; }
+.ws-grade-big.good { background: var(--good-soft); color: var(--good); }
+.ws-grade-big.bad { background: var(--bad-soft); color: var(--bad); }
+.ws-result-head > div:last-child { flex: 1; min-width: 220px; }
+.ws-grade { font-size: 1.4rem; font-weight: 800; white-space: nowrap; }
+.ws-grade small { font-size: .8rem; font-weight: 600; }
+.ws-grade.good { color: var(--good); }
+.ws-grade.bad { color: var(--bad); }
+.ws-part-detail ul { margin: 6px 0 0; padding-left: 20px; }
+.ws-grading .spinner { width: 28px; height: 28px; flex-shrink: 0; color: var(--primary); }

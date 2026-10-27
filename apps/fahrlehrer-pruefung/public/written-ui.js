@@ -81,7 +81,14 @@
     if (!MARKER_COLORS.some(c => c.id === s.markerColor)) s.markerColor = MARKER_COLORS[0].id;
     if (typeof s.split !== 'number' || s.split < 0.25 || s.split > 0.75) s.split = 0.5;
     s.fingerDraws = Boolean(s.fingerDraws);
+    s.paperZoom = clampNumber(s.paperZoom, 1, 3, 1);
+    s.questionZoom = clampNumber(s.questionZoom, 0.6, 2.5, 1);
     return s;
+  }
+
+  function clampNumber(value, min, max, fallback) {
+    const n = Number(value);
+    return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
   }
 
   // Handschrift liegt in IndexedDB (localStorage wäre für viele Striche zu klein).
@@ -154,9 +161,18 @@
     return exam.name || (exam.dateLabel ? `Prüfung vom ${exam.dateLabel}` : exam.title);
   }
 
+  function formatGrade(value) {
+    return Number(value).toFixed(1).replace('.', ',');
+  }
+
   function statusText(id) {
     const entry = meta.exams[id];
     if (!entry) return { label: 'Noch nicht begonnen', tone: '' };
+    if (entry.submission) {
+      const sub = entry.submission;
+      if (sub.status === 'done' && entry.result) return { label: `Abgegeben – Note ${formatGrade(entry.result.average)}`, tone: entry.result.passed ? 'sicher' : 'schwach', submitted: true };
+      return { label: sub.status === 'grading' ? 'Abgegeben – wird bewertet' : 'Abgegeben', tone: 'mittel', submitted: true };
+    }
     const timer = W.normalizeTimer(entry.timer);
     const status = W.timerStatus(timer, now());
     const left = W.formatClock(W.remainingMs(timer, now()));
@@ -207,12 +223,18 @@
       ${examTabs('schriftlich')}
       <div class="grid grid-2">${exams.map(exam => {
         const status = statusText(exam.id);
-        return `<a class="card written-card" href="#/schriftlich/${esc(exam.id)}">
+        const entry = meta.exams[exam.id] || {};
+        const last = !status.submitted && Array.isArray(entry.history) && entry.history.length ? entry.history[entry.history.length - 1] : null;
+        const started = status.tone && !status.submitted;
+        return `<div class="card written-card">
           <h3><span>${esc(examTitle(exam))}</span>${status.tone ? `<span class="chip ${esc(status.tone)}">${esc(status.label)}</span>` : ''}</h3>
           <p class="small muted">${esc(exam.parts.map(p => p.name).join(' · '))}</p>
-          <p class="small muted">${taskCount(exam)} Aufgaben${status.tone ? '' : ` · ${esc(status.label)}`}</p>
-          <span class="btn ${status.tone ? '' : 'primary'}">${status.tone ? 'Fortsetzen' : 'Prüfung öffnen'}</span>
-        </a>`;
+          <p class="small muted">${taskCount(exam)} Aufgaben${status.tone ? '' : ` · ${esc(status.label)}`}${last ? ` · Letzte Note ${esc(formatGrade(last.average))}` : ''}</p>
+          <div class="btn-row">${status.submitted
+            ? `<a class="btn primary" href="#/ergebnis/${esc(exam.id)}">Ergebnis ansehen</a>
+               <button class="btn" data-action="ws-restart" data-id="${esc(exam.id)}" data-confirm="Prüfung neu beginnen? Blätter und Timer werden geleert. Nochmal tippen">Neu beginnen</button>`
+            : `<a class="btn ${started ? '' : 'primary'}" href="#/schriftlich/${esc(exam.id)}">${started ? 'Fortsetzen' : 'Prüfung öffnen'}</a>`}</div>
+        </div>`;
       }).join('')}</div>`;
   }
 
@@ -260,6 +282,7 @@
       <header class="ws-bar">
         <a class="ws-btn ws-back" href="#/schriftlich" aria-label="Zurück zur Auswahl" title="Zurück zur Auswahl">${icon('back')}</a>
         <div class="ws-title"><strong>${esc(examTitle(exam))}</strong><span class="small muted">Wird automatisch gespeichert</span></div>
+        <button type="button" class="ws-btn ws-submit" data-action="ws-submit" data-confirm="Prüfung jetzt beenden und von Claude bewerten lassen? Nochmal tippen" title="Prüfung beenden und abgeben">Beenden</button>
         <div class="ws-timer" data-status="idle">
           <span class="ws-clock" role="timer" aria-live="off">5:00:00</span>
           <button type="button" class="ws-btn ws-timer-main" data-action="ws-timer">${icon('play')}<span>Start</span></button>
@@ -286,12 +309,13 @@
           <button type="button" class="ws-btn" data-action="ws-view" data-view="questions" aria-pressed="false">Fragen</button>
           <button type="button" class="ws-btn" data-action="ws-view" data-view="split" aria-pressed="false">Geteilt</button>
           <button type="button" class="ws-btn" data-action="ws-view" data-view="paper" aria-pressed="false">Blatt</button>
+          <button type="button" class="ws-btn ws-zoom" data-action="ws-zoom-reset" title="Zoom zurücksetzen (mit zwei Fingern zoomen)">100 %</button>
         </div>
       </div>
       <div class="ws-body">
         <section class="ws-pane ws-questions" aria-label="Aufgaben">
           <nav class="ws-jump" aria-label="Prüfungsteile">${exam.parts.map((part, i) => `<button type="button" class="chip" data-action="ws-jump" data-part="${i}">${esc(part.name)}</button>`).join('')}</nav>
-          ${exam.parts.map((part, i) => partSheet(exam, part, i)).join('')}
+          <div class="ws-qsheets">${exam.parts.map((part, i) => partSheet(exam, part, i)).join('')}</div>
           <p class="small muted ws-pane-foot"><button class="linklike" data-action="ws-clear-questions" data-confirm="Alle Markierungen auf den Fragen löschen? Nochmal tippen">Alle Markierungen auf den Fragen löschen</button></p>
         </section>
         <div class="ws-divider" role="separator" aria-orientation="vertical" aria-label="Trennlinie verschieben" tabindex="0"><span></span></div>
@@ -365,13 +389,291 @@
     const pane = document.querySelector('.ws-questions');
     if (!pane) return;
     const available = pane.clientWidth - 24;
-    const zoom = Math.max(0.3, Math.min(1.5, available / SHEET_WIDTH));
+    const fit = Math.max(0.3, Math.min(1.5, available / SHEET_WIDTH));
+    const zoom = fit * settings().questionZoom;
     pane.querySelectorAll('.ws-qsheet').forEach(sheet => {
       const inner = sheet.querySelector('.ws-qsheet-inner');
       inner.style.transform = `scale(${zoom})`;
       sheet.style.width = `${Math.round(SHEET_WIDTH * zoom)}px`;
       sheet.style.height = `${Math.ceil(inner.offsetHeight * zoom)}px`;
     });
+  }
+
+  // ------------------------------------------------------------------ Zoom (zwei Finger)
+
+  function applyPaperZoom() {
+    const paper = document.querySelector('.ws-paper');
+    if (paper) paper.style.setProperty('--paper-zoom', String(settings().paperZoom));
+    syncZoomButton();
+  }
+
+  function syncZoomButton() {
+    const button = document.querySelector('[data-action="ws-zoom-reset"]');
+    if (!button) return;
+    const s = settings();
+    const ws = document.querySelector('.ws');
+    const view = ws ? ws.dataset.view : 'split';
+    const zoom = view === 'questions' ? s.questionZoom : s.paperZoom;
+    button.textContent = `${Math.round(zoom * 100)} %`;
+    button.setAttribute('aria-pressed', String(s.paperZoom !== 1 || s.questionZoom !== 1));
+  }
+
+  /**
+   * Zwei-Finger-Zoom in einem Bereich: während der Geste wird nur per CSS
+   * skaliert (flüssig), beim Loslassen wird die neue Größe gesetzt und die
+   * Striche werden scharf neu gezeichnet. Stift-Berührungen zählen nicht.
+   */
+  function attachPinch(pane, getTarget, getZoom, setZoom, min, max) {
+    let pinch = null;
+    const fingers = event => Array.from(event.touches).filter(t => t.touchType !== 'stylus');
+    const distance = (a, b) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+    pane.addEventListener('touchstart', event => {
+      const f = fingers(event);
+      if (f.length !== 2) return;
+      event.preventDefault();
+      for (const surface of session.surfaces.values()) surface.cancel();
+      const target = getTarget();
+      const rect = target.getBoundingClientRect();
+      const paneRect = pane.getBoundingClientRect();
+      const cx = (f[0].clientX + f[1].clientX) / 2;
+      const cy = (f[0].clientY + f[1].clientY) / 2;
+      target.style.transformOrigin = `${cx - rect.left}px ${cy - rect.top}px`;
+      pinch = { target, d0: Math.max(1, distance(f[0], f[1])), z0: getZoom(), ratio: 1, px: cx - paneRect.left, py: cy - paneRect.top, sx: pane.scrollLeft, sy: pane.scrollTop };
+    }, { passive: false });
+    pane.addEventListener('touchmove', event => {
+      if (!pinch) return;
+      const f = fingers(event);
+      if (f.length < 2) return;
+      event.preventDefault();
+      const zoom = Math.min(max, Math.max(min, pinch.z0 * distance(f[0], f[1]) / pinch.d0));
+      pinch.ratio = zoom / pinch.z0;
+      pinch.target.style.transform = `scale(${pinch.ratio})`;
+    }, { passive: false });
+    const end = event => {
+      if (!pinch || fingers(event).length >= 2) return;
+      const done = pinch;
+      pinch = null;
+      done.target.style.transform = '';
+      if (Math.abs(done.ratio - 1) < 0.02) return;
+      setZoom(done.z0 * done.ratio);
+      pane.scrollLeft = (done.sx + done.px) * done.ratio - done.px;
+      pane.scrollTop = (done.sy + done.py) * done.ratio - done.py;
+    };
+    pane.addEventListener('touchend', end);
+    pane.addEventListener('touchcancel', end);
+    // Safari: kein Zoom der ganzen Seite, solange im Arbeitsbereich gezoomt wird.
+    pane.addEventListener('gesturestart', event => event.preventDefault());
+  }
+
+  function setPaperZoom(zoom) {
+    settings().paperZoom = clampNumber(zoom, 1, 3, 1);
+    saveMeta();
+    applyPaperZoom();
+  }
+
+  function setQuestionZoom(zoom) {
+    settings().questionZoom = clampNumber(zoom, 0.6, 2.5, 1);
+    saveMeta();
+    layoutQuestions();
+    syncZoomButton();
+  }
+
+  // ------------------------------------------------------------------ Abgabe und Bewertung
+
+  const gradingJobs = new Map();
+  let currentRoute = { name: '', param: null };
+
+  /** Antwortblätter als JPEG (A4, ca. 150 dpi) mit Karos und Handschrift; leere Seiten entfallen. */
+  async function renderAnswerImages(doc, maxImages) {
+    const pages = [];
+    for (let i = 0; i < doc.pageCount; i++) {
+      const strokes = doc.layers[`page-${i}`] || [];
+      if (strokes.length) pages.push(strokes);
+    }
+    // Mehr Blätter als erlaubt: je zwei nebeneinander auf ein Bild.
+    const perImage = pages.length > maxImages ? 2 : 1;
+    const width = 1240;
+    const height = Math.round(width * 297 / 210);
+    const scale = width / PAGE_WIDTH;
+    const blobs = [];
+    for (let i = 0; i < pages.length; i += perImage) {
+      const group = pages.slice(i, i + perImage);
+      const canvas = document.createElement('canvas');
+      canvas.width = width * group.length;
+      canvas.height = height;
+      const c = canvas.getContext('2d');
+      c.fillStyle = '#ffffff';
+      c.fillRect(0, 0, canvas.width, canvas.height);
+      group.forEach((strokes, g) => {
+        c.save();
+        c.translate(g * width, 0);
+        c.strokeStyle = '#dde4ee';
+        c.lineWidth = 1;
+        c.beginPath();
+        for (let x = 0; x <= PAGE_WIDTH; x += 5) { c.moveTo(x * scale, 0); c.lineTo(x * scale, height); }
+        for (let y = 0; y <= 297; y += 5) { c.moveTo(0, y * scale); c.lineTo(width, y * scale); }
+        c.stroke();
+        if (g > 0) {
+          c.strokeStyle = '#64748b';
+          c.lineWidth = 4;
+          c.beginPath(); c.moveTo(0, 0); c.lineTo(0, height); c.stroke();
+        }
+        for (const stroke of strokes) Ink.drawStroke(c, stroke, scale);
+        c.restore();
+      });
+      blobs.push(await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.85)));
+    }
+    return blobs.filter(Boolean).slice(0, maxImages);
+  }
+
+  function rerenderIfShowing(id) {
+    if (currentRoute.name === 'ergebnis' && currentRoute.param === id) ctx.rerender();
+  }
+
+  async function startGrading(id) {
+    const exam = examById.get(id);
+    const entry = examMeta(id);
+    if (!exam || !entry.submission || gradingJobs.has(id)) return;
+    if (!ctx.ai.available()) {
+      entry.submission.status = 'no-ai';
+      saveMeta();
+      rerenderIfShowing(id);
+      return;
+    }
+    entry.submission.status = 'grading';
+    entry.submission.error = null;
+    saveMeta();
+    const job = (async () => {
+      const doc = session && session.examId === id ? session.doc : W.normalizeDoc(await loadDoc(id), id);
+      const blobs = await renderAnswerImages(doc, await ctx.ai.maxImages());
+      if (!blobs.length) throw new Error('Auf den Blättern steht noch nichts – es gibt nichts zu bewerten.');
+      entry.submission.pages = blobs.length;
+      return ctx.ai.grade(exam, blobs);
+    })();
+    gradingJobs.set(id, job);
+    rerenderIfShowing(id);
+    try {
+      const result = await job;
+      const stored = Object.assign({}, result, { at: now(), elapsedMs: entry.submission.elapsedMs });
+      entry.result = stored;
+      entry.history = (Array.isArray(entry.history) ? entry.history : []).concat({ at: stored.at, average: stored.average, passed: stored.passed }).slice(-10);
+      entry.submission.status = 'done';
+    } catch (err) {
+      entry.submission.status = 'error';
+      entry.submission.error = ctx.ai.errorText(err);
+    } finally {
+      gradingJobs.delete(id);
+      saveMeta();
+      rerenderIfShowing(id);
+    }
+  }
+
+  function submitExam() {
+    if (!session) return;
+    const id = session.examId;
+    const hasInk = Object.keys(session.doc.layers).some(key => key.startsWith('page-') && session.doc.layers[key].length);
+    if (!hasInk) {
+      ctx.toast('Auf den karierten Blättern steht noch nichts. Schreiben Sie Ihre Antworten zuerst auf das Papier.');
+      return;
+    }
+    const entry = examMeta(id);
+    const t = now();
+    if (W.timerStatus(entry.timer, t) === 'running') entry.timer = W.pauseTimer(entry.timer, t);
+    entry.submission = { at: t, elapsedMs: W.elapsedMs(entry.timer, t), status: 'pending', error: null };
+    entry.result = null;
+    saveMeta();
+    flushSave();
+    // Erst die Bewertung anstoßen (registriert den Auftrag sofort), dann zur Ergebnisseite.
+    startGrading(id);
+    ctx.go(`#/ergebnis/${id}`);
+  }
+
+  async function restartExam(id) {
+    if (session && session.examId === id) {
+      clearTimeout(session.saveTimer);
+      session.loaded = false;
+    }
+    await storeDoc({ examId: id, pageCount: 1, layers: { 'page-0': [] }, savedAt: now() });
+    const old = meta.exams[id] || {};
+    meta.exams[id] = { history: Array.isArray(old.history) ? old.history : [] };
+    saveMeta();
+    if (session && session.examId === id) unmount();
+    ctx.go(`#/schriftlich/${id}`);
+  }
+
+  function durationLabel(ms) {
+    const minutes = Math.round((ms || 0) / 60000);
+    return `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, '0')} h`;
+  }
+
+  function renderGradingState(entry) {
+    const sub = entry.submission;
+    if (sub.status === 'grading' || sub.status === 'pending') {
+      return `<div class="card section ws-grading"><span class="spinner" aria-hidden="true"></span>
+        <div><h2>Claude bewertet Ihre Antwortblätter …</h2><p class="muted">Die Handschrift wird gelesen und jedes Fach benotet. Das dauert meist 1 bis 3 Minuten. Sie können die Seite offen lassen.</p></div></div>`;
+    }
+    if (sub.status === 'no-ai') {
+      return `<div class="panel warn"><h3>KI-Bewertung nicht verfügbar</h3>
+        <p>Die Bewertung braucht Claude. Auf der Website tragen Sie dafür unter <a href="#/einstellungen">Einstellungen</a> einen eigenen API-Schlüssel ein; in der App auf claude.ai fragt Claude beim ersten Mal, ob die Seite die KI (mit Bildern) nutzen darf. Ihre Blätter bleiben gespeichert.</p>
+        <div class="btn-row"><button class="btn primary" data-action="ws-regrade" data-id="${esc(entry.id)}">Jetzt bewerten</button></div></div>`;
+    }
+    return `<div class="panel bad"><h3>Bewertung fehlgeschlagen</h3><p>${esc(sub.error || 'Unbekannter Fehler.')}</p>
+      <div class="btn-row"><button class="btn primary" data-action="ws-regrade" data-id="${esc(entry.id)}">Erneut versuchen</button></div></div>`;
+  }
+
+  function renderGrades(result, exam) {
+    return `
+      <div class="card section ws-result-head">
+        <div class="ws-grade-big ${result.passed ? 'good' : 'bad'}"><span>Ø ${esc(formatGrade(result.average))}</span><small>${esc(result.averageLabel)}</small></div>
+        <div>
+          <p><span class="chip ${result.passed ? 'sicher' : 'schwach'}">${result.passed ? 'Bestanden (Orientierung)' : 'Noch nicht bestanden (Orientierung)'}</span></p>
+          ${result.summary ? `<p>${esc(result.summary)}</p>` : ''}
+          ${result.readability ? `<p class="small muted">Lesbarkeit: ${esc(result.readability)}</p>` : ''}
+        </div>
+      </div>
+      <div class="card section">
+        <h2>Noten je Fach</h2>
+        <ul class="list ws-grade-list">${result.parts.map(part => `<li>
+          <div><strong>${esc(part.name)}</strong><div class="small muted">${esc(part.percent)} % der Leistung</div></div>
+          <span class="ws-grade ${part.grade <= 4 ? 'good' : 'bad'}">${esc(part.grade)} <small>${esc(part.label)}</small></span></li>`).join('')}</ul>
+      </div>
+      ${result.parts.map(part => `<details class="disclosure ws-part-detail"><summary>${esc(part.name)} – Note ${esc(part.grade)} (${esc(part.label)})</summary>
+        ${part.summary ? `<p>${esc(part.summary)}</p>` : ''}
+        ${part.strengths.length ? `<div class="panel good"><h3>Das war gut</h3><ul>${part.strengths.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
+        ${part.gaps.length ? `<div class="panel warn"><h3>Das fehlte oder war falsch</h3><ul>${part.gaps.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
+        ${part.tasks.length ? `<ul class="list">${part.tasks.map(task => `<li><div><strong>${esc(task.label || 'Aufgabe')}</strong><div class="small">${esc(task.comment)}</div></div>
+          <span class="chip ${!task.found ? 'offen' : task.score >= 0.75 ? 'sicher' : task.score >= 0.4 ? 'mittel' : 'schwach'}">${task.found ? `${Math.round(task.score * 100)} %` : 'keine Antwort'}</span></li>`).join('')}</ul>` : ''}
+      </details>`).join('')}
+      <p class="small muted">Bewertung durch Claude zur Orientierung, Noten nach § 19 FahrlPrüfV. Maßgeblich ist der Prüfungsausschuss.${exam ? '' : ''}</p>`;
+  }
+
+  function renderResult(id) {
+    const exam = examById.get(id);
+    const entry = meta.exams[id];
+    if (!exam || !entry || !entry.submission) {
+      return `<div class="card empty">Für diese Prüfung gibt es noch kein Ergebnis. <a href="#/schriftlich">Zur Auswahl</a></div>`;
+    }
+    entry.id = id;
+    // Nach dem Neuladen läuft keine Bewertung mehr – dann neu anbieten.
+    if ((entry.submission.status === 'grading' || entry.submission.status === 'pending') && !gradingJobs.has(id)) {
+      entry.submission.status = 'error';
+      entry.submission.error = 'Die Bewertung wurde unterbrochen (Seite neu geladen).';
+      saveMeta();
+    }
+    const sub = entry.submission;
+    return `
+      <header class="page-head">
+        <div class="page-head-nav"><a class="back-arrow" href="#/schriftlich" aria-label="Zurück zur Auswahl" title="Zurück zur Auswahl"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></a><a href="#/schriftlich" class="small">Schriftliche Prüfung</a></div>
+        <h1>Ergebnis: ${esc(examTitle(exam))}</h1>
+        <p>Abgegeben am ${esc(new Date(sub.at).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' }))} · Bearbeitungszeit ${esc(durationLabel(sub.elapsedMs))}${sub.pages ? ` · ${esc(sub.pages)} ${sub.pages === 1 ? 'Blatt' : 'Blätter'}` : ''}</p>
+      </header>
+      ${sub.status === 'done' && entry.result ? renderGrades(entry.result, exam) : renderGradingState(entry)}
+      <div class="btn-row">
+        <a class="btn" href="#/schriftlich/${esc(id)}">Antwortblätter ansehen</a>
+        ${sub.status === 'done' ? `<button class="btn" data-action="ws-regrade" data-id="${esc(id)}">Erneut bewerten</button>` : ''}
+        <button class="btn primary" data-action="ws-restart" data-id="${esc(id)}" data-confirm="Prüfung neu beginnen? Blätter und Timer werden geleert. Nochmal tippen">Neu beginnen</button>
+        <a class="btn" href="#/schriftlich">Zur Auswahl</a>
+      </div>`;
   }
 
   function scheduleSave() {
@@ -445,6 +747,7 @@
     ws.dataset.view = view;
     session.view = view;
     syncToolbar();
+    syncZoomButton();
     requestAnimationFrame(() => {
       layoutQuestions();
       for (const surface of session.surfaces.values()) surface.resize();
@@ -530,8 +833,11 @@
     document.body.classList.add('ws-active');
     const ws = document.querySelector('.ws');
     ws.dataset.view = session.view;
+    applyPaperZoom();
     mountSurfaces();
     layoutQuestions();
+    attachPinch(ws.querySelector('.ws-paper'), () => ws.querySelector('.ws-pages'), () => settings().paperZoom, setPaperZoom, 1, 3);
+    attachPinch(ws.querySelector('.ws-questions'), () => ws.querySelector('.ws-qsheets'), () => settings().questionZoom, setQuestionZoom, 0.6, 2.5);
     ws.querySelectorAll('.ws-figure img').forEach(img => img.addEventListener('load', layoutQuestions, { once: true }));
     ws.querySelector('.ws-divider').addEventListener('pointerdown', startDivider);
     if (!session.listeners) {
@@ -650,6 +956,13 @@
       page.scrollIntoView({ behavior: 'smooth', block: 'start' });
     },
     'ws-view': el => setView(el.dataset.view),
+    'ws-zoom-reset': () => {
+      setPaperZoom(1);
+      setQuestionZoom(1);
+    },
+    'ws-submit': () => submitExam(),
+    'ws-regrade': el => startGrading(el.dataset.id),
+    'ws-restart': el => restartExam(el.dataset.id),
     'ws-jump': el => {
       const target = document.getElementById(`ws-part-${el.dataset.part}`);
       if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -679,6 +992,7 @@
 
   /** Nach jedem Rendern: Arbeitsplatz ein- bzw. aushängen. */
   function afterRender(route) {
+    currentRoute = route;
     if (route.name === 'schriftlich' && route.param && examById.has(route.param)) mount(route.param);
     else unmount();
   }
@@ -687,5 +1001,5 @@
     return param ? renderWorkspace(param) : renderList();
   }
 
-  root.FLWrittenUI = { init, render, afterRender, examTabs, hasExams: () => exams.length > 0 };
+  root.FLWrittenUI = { init, render, renderResult, afterRender, examTabs, hasExams: () => exams.length > 0 };
 })(typeof self !== 'undefined' ? self : this);

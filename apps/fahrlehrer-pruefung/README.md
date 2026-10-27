@@ -14,7 +14,7 @@ braucht es kein Framework, keinen Build-Schritt und keine externen Abhängigkeit
 | Üben | Frage erst frei beantworten (tippen oder einsprechen), danach Schnellbewertung, Erklärung in einfacher Sprache, Praxisbeispiel, Musterantwort und mögliche Nachfragen |
 | Heute | Tagesplan aus fälligen Wiederholungen (Leitner-System), Schwächen und neuen Themen |
 | Prüfung | Simulation der mündlichen Prüfung mit Nachfragen, wahlweise mit Trainings-Prüfer (offline) oder KI-Prüfer |
-| Schriftliche Prüfung | Original-Prüfungen zum Auswählen: 5-Stunden-Timer zum selbst Starten, links die Aufgaben, rechts kariertes A4-Papier; Schreiben und Markieren mit Apple Pencil (Kugelschreiber, Textmarker, Radierer, Rückgängig), alles wird automatisch gespeichert |
+| Schriftliche Prüfung | Original-Prüfungen zum Auswählen: 5-Stunden-Timer zum selbst Starten, links die Aufgaben, rechts kariertes A4-Papier; Schreiben und Markieren mit Apple Pencil (Kugelschreiber, Textmarker, Radierer, Rückgängig), Zwei-Finger-Zoom, Abgabe mit Noten je Fach durch Claude |
 | Analyse | Schwache Themen, häufig vergessene Kernpunkte, Fächervergleich, Trend und konkrete Empfehlungen |
 
 ### Lernfortschritt und Wissensstand
@@ -146,6 +146,16 @@ Kugelschreiber (3 Farben, 3 Stärken, reagiert auf den Andruck), Textmarker
 (3 Farben) und Radierer funktionieren auf dem Papier und direkt auf den Fragen.
 Striche werden in Blatt-Koordinaten in IndexedDB gespeichert, Timer und
 Einstellungen im `localStorage`.
+
+Mit zwei Fingern zoomen Sie in das karierte Blatt und in die Fragen; *100 %*
+setzt den Zoom zurück. *Beenden* gibt die Prüfung ab: Die beschriebenen Blätter
+gehen als Bilder an Claude, das die Handschrift liest und jedes Fach nach § 19
+FahrlPrüfV benotet (1 bis 6, mit Begründung je Aufgabe). Die Bewertung dient
+der Orientierung. Danach steht die Prüfung wieder in der Auswahl und lässt sich
+mit *Neu beginnen* von vorn bearbeiten; die letzte Note bleibt sichtbar.
+Die KI-Bewertung läuft über den eigenen Server (`/api/written-grade`), auf der
+Website mit eigenem API-Schlüssel oder auf claude.ai (dort mit Freigabe für
+Bilder).
 
 ## Aufbau
 

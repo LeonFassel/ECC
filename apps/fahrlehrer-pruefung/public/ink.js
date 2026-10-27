@@ -224,6 +224,11 @@
       redraw,
       appendStroke,
       resize: size,
+      /** Laufenden Strich verwerfen (z. B. wenn ein Zwei-Finger-Zoom beginnt). */
+      cancel() {
+        current = null;
+        drawLive();
+      },
       setFingerMode(on) {
         live.style.touchAction = on ? 'none' : 'pan-x pan-y';
       },

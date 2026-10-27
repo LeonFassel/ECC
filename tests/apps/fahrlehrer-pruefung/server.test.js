@@ -108,6 +108,31 @@ async function runTests() {
     assert.strictEqual(turn.assessment.questionId, question.id);
   }));
 
+  results.push(await test('written exam grading sends page images and normalises grades', async () => {
+    const exam = { id: 'se-test', name: 'Testprüfung', parts: [
+      { name: 'Recht', intro: '', tasks: [{ label: '1)', text: 'Nennen Sie zwei Zwecke der StVO.' }] },
+      { name: 'Technik', intro: '', tasks: [{ label: '1a)', text: 'Erläutern Sie das Diagramm.', figures: [{ src: 'data:image/webp;base64,AA', alt: 'Drehmomentkurve' }] }] }
+    ] };
+    const params = ai.createAiService(fakeClient(() => fakeResponse({})));
+    assert.ok(params);
+    const request = require('../../../apps/fahrlehrer-pruefung/public/core/ai-requests').buildWrittenGradingRequest(exam, [{ mediaType: 'image/jpeg', data: 'QUJD' }, { mediaType: 'image/jpeg', data: 'REVG' }], 'claude-opus-5-5');
+    const content = request.messages[0].content;
+    assert.deepStrictEqual(content.map(c => c.type), ['image', 'image', 'text']);
+    assert.strictEqual(content[0].source.data, 'QUJD');
+    assert.ok(content[2].text.includes('Nennen Sie zwei Zwecke der StVO.') && content[2].text.includes('Drehmomentkurve') && content[2].text.includes('2 Antwortblatt'));
+    assert.ok(request.system.includes('§ 19 FahrlPrüfV'));
+    assert.strictEqual(request.output_config.format.type, 'json_schema');
+    const client = fakeClient(() => fakeResponse({ parts: [
+      { name: 'Technik', percent: 40, grade: 5, summary: 's', strengths: [], gaps: ['g'], tasks: [{ label: '1a)', found: true, score: 0.4, comment: 'c' }] },
+      { name: 'Recht', percent: 140, grade: 0, summary: 's', strengths: ['x'], gaps: [], tasks: [] }
+    ], summary: 'gesamt', readability: '' }));
+    const graded = await ai.createAiService(client).gradeWritten(exam, [{ mediaType: 'image/jpeg', data: 'QUJD' }]);
+    assert.deepStrictEqual(graded.parts.map(p => [p.name, p.grade, p.percent]), [['Recht', 1, 100], ['Technik', 5, 40]], 'parts in exam order, values clamped');
+    assert.strictEqual(graded.average, 3);
+    assert.strictEqual(graded.averageLabel, 'befriedigend');
+    assert.strictEqual(graded.passed, false, 'one subject worse than 4');
+  }));
+
   results.push(await test('loadDefaultClient stays off without credentials', () => {
     assert.strictEqual(ai.loadDefaultClient({}), null);
     assert.strictEqual(ai.loadDefaultClient({ ANTHROPIC_API_KEY: 'x', FL_AI_DISABLED: '1' }), null);
@@ -143,10 +168,18 @@ async function runTests() {
 
   const service = {
     evaluate: async (q, answer) => ({ score: 0.5, covered: [], missing: [], errors: [], feedback: `${q.id}:${answer}`, tip: '' }),
-    examine: async (qs, history) => ({ message: `${qs.length}/${history.length}`, assessment: null, finished: false, summary: '' })
+    examine: async (qs, history) => ({ message: `${qs.length}/${history.length}`, assessment: null, finished: false, summary: '' }),
+    gradeWritten: async () => ({ parts: [] })
   };
   const full = createAppServer({ aiService: service });
   const fullUrl = await listen(full);
+
+  results.push(await test('written grading endpoint rejects unknown exams and bad images', async () => {
+    const bad = await post(fullUrl, '/api/written-grade', { examId: 'se-gibt-es-nicht', images: [{ mediaType: 'image/jpeg', data: 'QUJD' }] });
+    assert.strictEqual(bad.status, 400);
+    const noImages = await post(fullUrl, '/api/written-grade', { examId: 'se-gibt-es-nicht', images: [{ mediaType: 'text/html', data: '<b>' }] });
+    assert.strictEqual(noImages.status, 400);
+  }));
 
   results.push(await test('evaluate endpoint validates input and forwards to the AI service', async () => {
     const bad = await post(fullUrl, '/api/evaluate', { questionId: 'nope', answer: 'x' });
