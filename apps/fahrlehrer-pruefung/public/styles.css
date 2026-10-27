@@ -566,3 +566,18 @@ body.ws-active .main { margin: 0; max-width: none; padding: 0; }
 .ws[data-tool="text"] .ws-textbox { pointer-events: auto; outline: 1.5px dashed var(--primary); outline-offset: 1px; border-radius: 2px; }
 .ws[data-tool="text"] .ws-textbox-tools { display: flex; }
 .ws[data-tool="text"] .ink-live { cursor: text; }
+
+/* Archiv: nach links wischen zum Löschen */
+.swipe-list { padding-top: 6px; padding-bottom: 6px; overflow: hidden; }
+.swipe-row { position: relative; padding: 0 !important; overflow: hidden; transition: opacity .18s ease, max-height .18s ease; max-height: 200px; }
+.swipe-content { position: relative; z-index: 1; display: flex; justify-content: space-between; align-items: center; gap: 12px; width: 100%; padding: 12px 0; background: var(--surface); transition: transform .2s ease; touch-action: pan-y; }
+.swipe-row.dragging .swipe-content { transition: none; }
+.swipe-delete { position: absolute; top: 0; right: 0; bottom: 0; width: 84px; display: flex; align-items: center; justify-content: center; border: 0; background: var(--bad); color: #fff; cursor: pointer; }
+.swipe-delete .ws-icon { width: 24px; height: 24px; }
+.swipe-row.removing { opacity: 0; max-height: 0; }
+.ws-view-entry { margin: -6px 0 14px; }
+.ws-view-entry .btn .ws-icon { width: 20px; height: 20px; }
+.ws-textbox.static { pointer-events: none; }
+.ws-textbox-text { padding: 0 calc(1 * 100cqw / 210); color: #111827; font-size: calc(4.2 * 100cqw / 210); line-height: calc(5 * 100cqw / 210); white-space: pre-wrap; overflow-wrap: anywhere; }
+.ws-viewer .ws-bar { flex-wrap: wrap; }
+@media (prefers-reduced-motion: reduce) { .swipe-content, .swipe-row { transition: none; } }

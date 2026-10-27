@@ -214,7 +214,9 @@
     plus: '<path d="M12 5v14M5 12h14"/>',
     text: '<path d="M5 7V5h14v2"/><path d="M12 5v14"/><path d="M9 19h6"/>',
     move: '<path d="M12 3v18M3 12h18"/><path d="M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3"/>',
-    close: '<path d="M6 6l12 12M18 6L6 18"/>'
+    close: '<path d="M6 6l12 12M18 6L6 18"/>',
+    trash: '<path d="M4 7h16"/><path d="M10 11v6M14 11v6"/><path d="M6 7l1 13h10l1-13"/><path d="M9 7V4h6v3"/>',
+    eye: '<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>'
   };
 
   function icon(name) {
@@ -451,7 +453,7 @@
       const f = fingers(event);
       if (f.length !== 2) return;
       event.preventDefault();
-      for (const surface of session.surfaces.values()) surface.cancel();
+      for (const surface of activeSurfaces()) surface.cancel();
       const target = getTarget();
       const rect = target.getBoundingClientRect();
       const paneRect = pane.getBoundingClientRect();
@@ -762,6 +764,10 @@
       pages[`page-${i}`] = doc.layers[`page-${i}`] || [];
       if (doc.textboxes && doc.textboxes[`page-${i}`]) boxes[`page-${i}`] = doc.textboxes[`page-${i}`].filter(b => b.text.trim());
     }
+    // Markierungen auf den Fragen gehören zur Abgabe dazu (Ansicht im Archiv).
+    for (const key of Object.keys(doc.layers)) {
+      if (key.startsWith('q-') && doc.layers[key].length) pages[key] = doc.layers[key];
+    }
     return JSON.parse(JSON.stringify({ pageCount: doc.pageCount, layers: pages, textboxes: boxes }));
   }
 
@@ -925,10 +931,15 @@
   function renderArchiveList() {
     const list = archiveList().slice().sort((a, b) => b.at - a.at);
     return `${archiveHead('Archiv', 'Ihre abgegebenen schriftlichen Prüfungen mit Bewertung – die neueste zuerst.')}
-      ${list.length ? `<div class="card"><ul class="list">${list.map(item => `<li>
-        <div><a href="#/archiv/${esc(item.id)}">${esc(item.name)}</a>
-          <div class="small muted">Abgegeben am ${esc(dateLabel(item.at))}${item.elapsedMs ? ` · ${esc(durationLabel(item.elapsedMs))}` : ''}${item.pages ? ` · ${esc(item.pages)} ${item.pages === 1 ? 'Blatt' : 'Blätter'}` : ''}</div></div>
-        ${archiveChip(item)}</li>`).join('')}</ul></div>`
+      ${list.length ? `<p class="small muted">Tipp: Eintrag nach links wischen, um ihn zu löschen.</p>
+        <div class="card swipe-list"><ul class="list">${list.map(item => `<li class="swipe-row" data-id="${esc(item.id)}">
+        <div class="swipe-content">
+          <div><a href="#/archiv/${esc(item.id)}">${esc(item.name)}</a>
+            <div class="small muted">Abgegeben am ${esc(dateLabel(item.at))}${item.elapsedMs ? ` · ${esc(durationLabel(item.elapsedMs))}` : ''}${item.pages ? ` · ${esc(item.pages)} ${item.pages === 1 ? 'Blatt' : 'Blätter'}` : ''}</div></div>
+          ${archiveChip(item)}
+        </div>
+        <button type="button" class="swipe-delete" data-action="ws-archive-remove" data-id="${esc(item.id)}" aria-label="${esc(item.name)} aus dem Archiv löschen" title="Löschen" tabindex="-1">${icon('trash')}</button>
+      </li>`).join('')}</ul></div>`
         : '<div class="card empty">Noch keine abgegebene Prüfung. Mit „Beenden“ im Prüfungsbildschirm geben Sie eine Prüfung ab.</div>'}`;
   }
 
@@ -938,6 +949,15 @@
     const blobs = await renderAnswerImages(W.normalizeDoc(record.doc, record.examId), 99);
     sheetCache.set(id, blobs.map(blob => URL.createObjectURL(blob)));
     rerenderIfShowing(id);
+  }
+
+  function archiveBody(summary, record) {
+    if (summary.status !== 'done') return renderGradingState(summary);
+    if (record && record.result) return renderGrades(record.result);
+    if (summary.detailsMissing) {
+      return `<div class="card section"><p>Note: <strong>Ø ${esc(formatGrade(summary.average))}</strong>. Die Einzelheiten dieser älteren Bewertung sind nicht gespeichert.</p></div>`;
+    }
+    return '<div class="card section"><p class="muted">Bewertung wird geladen …</p></div>';
   }
 
   function renderArchiveEntry(id) {
@@ -960,19 +980,13 @@
       prepareSheets(id);
     }
     const sheets = sheetCache.get(id);
-    let body;
-    if (summary.status === 'done') {
-      body = record && record.result ? renderGrades(record.result)
-        : summary.detailsMissing
-          ? `<div class="card section"><p>Note: <strong>Ø ${esc(formatGrade(summary.average))}</strong>. Die Einzelheiten dieser älteren Bewertung sind nicht gespeichert.</p></div>`
-          : '<div class="card section"><p class="muted">Bewertung wird geladen …</p></div>';
-    } else {
-      body = renderGradingState(summary);
-    }
+    const body = archiveBody(summary, record);
+    const canView = !summary.detailsMissing && examById.has(summary.examId);
     return `${archiveHead(summary.name, `Abgegeben am ${esc(dateLabel(summary.at))}${summary.elapsedMs ? ` · Bearbeitungszeit ${esc(durationLabel(summary.elapsedMs))}` : ''}`)}
+      ${canView ? `<div class="btn-row ws-view-entry"><a class="btn primary" href="#/archivansicht/${esc(id)}">${icon('eye')} Geschriebene Prüfung ansehen</a></div>` : ''}
       ${body}
       ${sheets && sheets.length ? `<div class="section-title"><h2>Ihre Antwortblätter</h2></div>
-        <div class="ws-sheets">${sheets.map((url, i) => `<figure><button type="button" class="figure-zoom" data-action="zoom-figure" aria-label="Blatt ${i + 1} vergrößern"><img src="${esc(url)}" alt="Antwortblatt ${i + 1}" loading="lazy"></button><figcaption>Blatt ${i + 1}</figcaption></figure>`).join('')}</div>` : ''}
+        <div class="ws-sheets">${sheets.map((url, i) => `<figure><a class="figure-zoom" href="#/archivansicht/${esc(id)}" aria-label="Blatt ${i + 1} in der Prüfungsansicht öffnen"><img src="${esc(url)}" alt="Antwortblatt ${i + 1}" loading="lazy"></a><figcaption>Blatt ${i + 1}</figcaption></figure>`).join('')}</div>` : ''}
       <div class="btn-row">
         ${summary.status === 'done' && !summary.detailsMissing ? `<button class="btn" data-action="ws-regrade" data-id="${esc(id)}">Erneut bewerten</button>` : ''}
         ${examById.has(summary.examId) ? `<a class="btn primary" href="#/schriftlich/${esc(summary.examId)}">Prüfung neu schreiben</a>` : ''}
@@ -985,7 +999,7 @@
     return param ? renderArchiveEntry(param) : renderArchiveList();
   }
 
-  async function deleteArchiveEntry(id) {
+  async function deleteArchiveEntry(id, stay) {
     meta.archive = archiveList().filter(a => a.id !== id);
     saveMeta();
     archiveCache.delete(id);
@@ -993,7 +1007,172 @@
     if (urls) urls.forEach(url => URL.revokeObjectURL(url));
     sheetCache.delete(id);
     await deleteRecord('archive', id);
-    ctx.go('#/archiv');
+    if (stay) ctx.rerender();
+    else ctx.go('#/archiv');
+  }
+
+  // ------------------------------------------------------------------ Archiv: nach links wischen zum Löschen
+
+  const SWIPE_OPEN = 84;
+
+  function closeSwipes(except) {
+    document.querySelectorAll('.swipe-row.open').forEach(row => {
+      if (row === except) return;
+      row.classList.remove('open');
+      row.querySelector('.swipe-content').style.transform = '';
+      row.querySelector('.swipe-delete').tabIndex = -1;
+    });
+  }
+
+  function wireSwipeRows() {
+    document.querySelectorAll('.swipe-row').forEach(row => {
+      const content = row.querySelector('.swipe-content');
+      let drag = null;
+      let suppressClick = false;
+      content.addEventListener('pointerdown', event => {
+        if (event.button !== undefined && event.button > 0) return;
+        drag = { x: event.clientX, y: event.clientY, base: row.classList.contains('open') ? -SWIPE_OPEN : 0, active: false, id: event.pointerId };
+        suppressClick = false;
+      });
+      content.addEventListener('pointermove', event => {
+        if (!drag || event.pointerId !== drag.id) return;
+        const dx = event.clientX - drag.x;
+        const dy = event.clientY - drag.y;
+        if (!drag.active) {
+          if (Math.abs(dx) < 8 || Math.abs(dx) < Math.abs(dy)) return;
+          drag.active = true;
+          closeSwipes(row);
+          row.classList.add('dragging');
+          try {
+            content.setPointerCapture(event.pointerId);
+          } catch (_err) {
+            // ohne Capture
+          }
+        }
+        const offset = Math.max(-SWIPE_OPEN * 1.4, Math.min(0, drag.base + dx));
+        content.style.transform = `translateX(${offset}px)`;
+      });
+      const end = event => {
+        if (!drag || event.pointerId !== drag.id) return;
+        const wasActive = drag.active;
+        const dx = event.clientX - drag.x;
+        const open = wasActive ? drag.base + dx < -SWIPE_OPEN / 2 : row.classList.contains('open');
+        drag = null;
+        row.classList.remove('dragging');
+        if (!wasActive) return;
+        suppressClick = true;
+        row.classList.toggle('open', open);
+        content.style.transform = open ? `translateX(${-SWIPE_OPEN}px)` : '';
+        row.querySelector('.swipe-delete').tabIndex = open ? 0 : -1;
+      };
+      content.addEventListener('pointerup', end);
+      content.addEventListener('pointercancel', end);
+      // Mit der Maus würde der Browser sonst den Link "mitnehmen" statt zu wischen.
+      content.addEventListener('dragstart', event => event.preventDefault());
+      // Nach dem Wischen keinen Link öffnen; bei offener Zeile schließt ein Tippen sie wieder.
+      content.addEventListener('click', event => {
+        if (!suppressClick && !row.classList.contains('open')) return;
+        event.preventDefault();
+        event.stopPropagation();
+        // Der Klick direkt nach dem Wischen zählt nicht; sonst schließt ein Tippen die offene Zeile.
+        if (suppressClick) suppressClick = false;
+        else closeSwipes();
+      }, true);
+    });
+  }
+
+  // ------------------------------------------------------------------ Archiv: geschriebene Prüfung ansehen
+
+  let viewer = null;
+
+  function staticTextboxHtml(box) {
+    return `<div class="ws-textbox static" style="--x:${box.x};--y:${box.y};--w:${box.w}"><div class="ws-textbox-text">${esc(box.text)}</div></div>`;
+  }
+
+  function renderViewer(id) {
+    const summary = archiveSummary(id);
+    const exam = summary && examById.get(summary.examId);
+    if (!summary || !exam || summary.detailsMissing) {
+      return `${archiveHead('Archiv', '')}<div class="card empty">Diese Abgabe kann nicht angezeigt werden. <a href="#/archiv">Zum Archiv</a></div>`;
+    }
+    const record = archiveCache.get(id);
+    if (!record) {
+      loadArchive(id).then(found => {
+        if (found && currentRoute.name === 'archivansicht' && currentRoute.param === id) ctx.rerender();
+      });
+      return `${archiveHead(summary.name, '')}<div class="card section"><p class="muted">Die Abgabe wird geladen …</p></div>`;
+    }
+    const doc = W.normalizeDoc(record.doc, summary.examId);
+    const s = settings();
+    const grade = summary.status === 'done' && summary.average !== null && summary.average !== undefined ? ` · Ø ${formatGrade(summary.average)}` : '';
+    return `<div class="ws ws-viewer" data-view="split" style="--ws-split:${s.split}">
+      <header class="ws-bar">
+        <a class="ws-btn ws-back" href="#/archiv/${esc(id)}" aria-label="Zurück zum Ergebnis" title="Zurück zum Ergebnis">${icon('back')}</a>
+        <div class="ws-title"><strong>${esc(summary.name)}</strong><span class="small muted">Abgabe vom ${esc(dateLabel(summary.at))}${esc(grade)} · nur ansehen</span></div>
+        <div class="ws-group ws-views" role="group" aria-label="Ansicht">
+          <button type="button" class="ws-btn" data-action="ws-view" data-view="questions" aria-pressed="false">Fragen</button>
+          <button type="button" class="ws-btn" data-action="ws-view" data-view="split" aria-pressed="true">Geteilt</button>
+          <button type="button" class="ws-btn" data-action="ws-view" data-view="paper" aria-pressed="false">Blatt</button>
+          <button type="button" class="ws-btn ws-zoom" data-action="ws-zoom-reset" title="Zoom zurücksetzen (mit zwei Fingern zoomen)">100 %</button>
+        </div>
+      </header>
+      <div class="ws-body">
+        <section class="ws-pane ws-questions" aria-label="Aufgaben">
+          <nav class="ws-jump" aria-label="Prüfungsteile">${exam.parts.map((part, i) => `<button type="button" class="chip" data-action="ws-jump" data-part="${i}">${esc(part.name)}</button>`).join('')}</nav>
+          <div class="ws-qsheets">${exam.parts.map((part, i) => partSheet(exam, part, i)).join('')}</div>
+        </section>
+        <div class="ws-divider" role="separator" aria-orientation="vertical" aria-label="Trennlinie verschieben" tabindex="0"><span></span></div>
+        <section class="ws-pane ws-paper" aria-label="Ihre Antwortblätter">
+          <div class="ws-pages">${Array.from({ length: doc.pageCount }, (_, i) => i).filter(i => W.pageHasContent(doc, i)).map((i, n) => `<div class="ws-page-wrap">
+            <div class="ws-page" data-ink-layer="page-${i}" aria-label="Antwortblatt ${n + 1}"><div class="ws-textlayer">${((doc.textboxes || {})[`page-${i}`] || []).map(staticTextboxHtml).join('')}</div></div>
+            <div class="ws-page-foot"><span>Blatt ${n + 1}</span></div></div>`).join('')}</div>
+        </section>
+      </div>
+    </div>`;
+  }
+
+  function mountViewer(id) {
+    const record = archiveCache.get(id);
+    const ws = document.querySelector('.ws-viewer');
+    unmountViewer();
+    if (!record || !ws) return;
+    const doc = W.normalizeDoc(record.doc, record.examId);
+    document.body.classList.add('ws-active');
+    viewer = { id, surfaces: [], observer: null, view: window.innerWidth < 760 ? 'paper' : 'split' };
+    ws.dataset.view = viewer.view;
+    applyPaperZoom();
+    ws.querySelectorAll('[data-ink-layer]').forEach(el => {
+      const key = el.dataset.inkLayer;
+      const isQuestion = key.startsWith('q-');
+      viewer.surfaces.push(Ink.createSurface({
+        host: el,
+        readOnly: true,
+        logicalWidth: isQuestion ? SHEET_WIDTH : PAGE_WIDTH,
+        getStrokes: () => doc.layers[key] || [],
+        getTool: () => ({ tool: 'none' }),
+        fingerDraws: () => false,
+        onStroke: () => {},
+        onErase: () => {},
+        onActivity: () => {}
+      }));
+    });
+    layoutQuestions();
+    ws.querySelectorAll('.ws-figure img').forEach(img => img.addEventListener('load', layoutQuestions, { once: true }));
+    ws.querySelector('.ws-divider').addEventListener('pointerdown', startDivider);
+    attachPinch(ws.querySelector('.ws-paper'), () => ws.querySelector('.ws-pages'), () => settings().paperZoom, setPaperZoom, 1, 3);
+    attachPinch(ws.querySelector('.ws-questions'), () => ws.querySelector('.ws-qsheets'), () => settings().questionZoom, setQuestionZoom, 0.6, 2.5);
+    if (typeof ResizeObserver === 'function') {
+      viewer.observer = new ResizeObserver(() => layoutQuestions());
+      viewer.observer.observe(ws.querySelector('.ws-questions'));
+    }
+    setView(viewer.view);
+  }
+
+  function unmountViewer() {
+    if (!viewer) return;
+    for (const surface of viewer.surfaces) surface.destroy();
+    if (viewer.observer) viewer.observer.disconnect();
+    viewer = null;
   }
 
   function scheduleSave() {
@@ -1065,13 +1244,21 @@
     const ws = document.querySelector('.ws');
     if (!ws) return;
     ws.dataset.view = view;
-    session.view = view;
-    syncToolbar();
+    if (session) session.view = view;
+    if (viewer) viewer.view = view;
+    if (session) syncToolbar();
+    ws.querySelectorAll('[data-action="ws-view"]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === view)));
     syncZoomButton();
     requestAnimationFrame(() => {
       layoutQuestions();
-      for (const surface of session.surfaces.values()) surface.resize();
+      for (const surface of activeSurfaces()) surface.resize();
     });
+  }
+
+  function activeSurfaces() {
+    if (session) return Array.from(session.surfaces.values());
+    if (viewer) return viewer.surfaces;
+    return [];
   }
 
   function startDivider(event) {
@@ -1296,6 +1483,11 @@
     'ws-submit': () => submitExam(),
     'ws-regrade': el => startGrading(el.dataset.id),
     'ws-archive-delete': el => deleteArchiveEntry(el.dataset.id),
+    'ws-archive-remove': el => {
+      const row = el.closest('.swipe-row');
+      if (row) row.classList.add('removing');
+      setTimeout(() => deleteArchiveEntry(el.dataset.id, true), 180);
+    },
     'ws-jump': el => {
       const target = document.getElementById(`ws-part-${el.dataset.part}`);
       if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -1329,11 +1521,14 @@
     currentRoute = route;
     if (route.name === 'schriftlich' && route.param && examById.has(route.param)) mount(route.param);
     else unmount();
+    if (route.name === 'archivansicht' && route.param) mountViewer(route.param);
+    else unmountViewer();
+    if (route.name === 'archiv' && !route.param) wireSwipeRows();
   }
 
   function render(param) {
     return param ? renderWorkspace(param) : renderList();
   }
 
-  root.FLWrittenUI = { init, render, renderArchive, afterRender, examTabs, hasExams: () => exams.length > 0 };
+  root.FLWrittenUI = { init, render, renderArchive, renderViewer, afterRender, examTabs, hasExams: () => exams.length > 0 };
 })(typeof self !== 'undefined' ? self : this);

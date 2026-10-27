@@ -79,6 +79,7 @@
    *  getTool()     { tool: 'pen'|'marker'|'eraser', color, width }
    *  fingerDraws() true, wenn auch der Finger zeichnen soll
    *  onStroke(stroke), onErase(indices), onActivity(), onTap(point) (Werkzeug "text")
+ *  readOnly      nur anzeigen, keine Eingabe
    */
   function createSurface(options) {
     const host = options.host;
@@ -218,13 +219,18 @@
       if (stylus || options.fingerDraws()) event.preventDefault();
     }
 
-    live.addEventListener('pointerdown', onDown);
-    live.addEventListener('pointermove', onMove);
-    live.addEventListener('pointerup', onUp);
-    live.addEventListener('pointercancel', onUp);
-    live.addEventListener('touchstart', onTouch, { passive: false });
-    live.addEventListener('touchmove', onTouch, { passive: false });
-    live.addEventListener('contextmenu', event => event.preventDefault());
+    if (options.readOnly) {
+      // Nur anzeigen (Archiv): Berührungen gehen an die Seite (scrollen, zoomen).
+      live.style.pointerEvents = 'none';
+    } else {
+      live.addEventListener('pointerdown', onDown);
+      live.addEventListener('pointermove', onMove);
+      live.addEventListener('pointerup', onUp);
+      live.addEventListener('pointercancel', onUp);
+      live.addEventListener('touchstart', onTouch, { passive: false });
+      live.addEventListener('touchmove', onTouch, { passive: false });
+      live.addEventListener('contextmenu', event => event.preventDefault());
+    }
 
     const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(() => size()) : null;
     if (observer) observer.observe(host);

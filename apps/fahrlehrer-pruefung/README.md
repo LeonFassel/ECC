@@ -156,7 +156,10 @@ Blatt und in die Fragen; *100 %* setzt den Zoom zurück.
 Claude, das die Handschrift liest und jedes Fach nach § 19 FahrlPrüfV benotet
 (1 bis 6, mit Begründung je Aufgabe). Die Bewertung dient der Orientierung.
 Die Abgabe landet im *Archiv* (Noten, Kommentare und Antwortblätter, erneut
-bewertbar), und die Prüfung steht wieder unbearbeitet in der Auswahl.
+bewertbar), und die Prüfung steht wieder unbearbeitet in der Auswahl. Im Archiv
+zeigt *Geschriebene Prüfung ansehen* die Aufgaben mit den eigenen Markierungen
+neben den abgegebenen Blättern; ein Eintrag lässt sich nach links wischen und
+über den Mülleimer löschen.
 Die KI-Bewertung läuft über den eigenen Server (`/api/written-grade`), auf der
 Website mit eigenem API-Schlüssel oder auf claude.ai (dort mit Freigabe für
 Bilder).
