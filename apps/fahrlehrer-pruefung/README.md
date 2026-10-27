@@ -147,12 +147,16 @@ Kugelschreiber (3 Farben, 3 Stärken, reagiert auf den Andruck), Textmarker
 Striche werden in Blatt-Koordinaten in IndexedDB gespeichert, Timer und
 Einstellungen im `localStorage`.
 
-Mit zwei Fingern zoomen Sie in das karierte Blatt und in die Fragen; *100 %*
-setzt den Zoom zurück. *Beenden* gibt die Prüfung ab: Die beschriebenen Blätter
-gehen als Bilder an Claude, das die Handschrift liest und jedes Fach nach § 19
-FahrlPrüfV benotet (1 bis 6, mit Begründung je Aufgabe). Die Bewertung dient
-der Orientierung. Danach steht die Prüfung wieder in der Auswahl und lässt sich
-mit *Neu beginnen* von vorn bearbeiten; die letzte Note bleibt sichtbar.
+Mit dem Werkzeug *Textfeld* (T) tippen Sie auf das Blatt und schreiben mit der
+Tastatur; Textfelder lassen sich verschieben und löschen und stehen auch auf
+den Blättern, die bewertet werden. Mit zwei Fingern zoomen Sie in das karierte
+Blatt und in die Fragen; *100 %* setzt den Zoom zurück.
+
+*Beenden* gibt die Prüfung ab: Die beschriebenen Blätter gehen als Bilder an
+Claude, das die Handschrift liest und jedes Fach nach § 19 FahrlPrüfV benotet
+(1 bis 6, mit Begründung je Aufgabe). Die Bewertung dient der Orientierung.
+Die Abgabe landet im *Archiv* (Noten, Kommentare und Antwortblätter, erneut
+bewertbar), und die Prüfung steht wieder unbearbeitet in der Auswahl.
 Die KI-Bewertung läuft über den eigenen Server (`/api/written-grade`), auf der
 Website mit eigenem API-Schlüssel oder auf claude.ai (dort mit Freigabe für
 Bilder).

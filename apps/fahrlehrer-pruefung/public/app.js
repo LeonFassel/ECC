@@ -555,7 +555,7 @@
     document.querySelectorAll('[data-nav]').forEach(a => {
       const active = a.dataset.nav === r.name
         || (a.dataset.nav === 'faecher' && (r.name === 'fach' || r.name === 'sammlung' || r.name === 'stapel'))
-        || (a.dataset.nav === 'pruefung' && (r.name === 'schriftlich' || r.name === 'ergebnis'));
+        || (a.dataset.nav === 'pruefung' && (r.name === 'schriftlich' || r.name === 'archiv'));
       a.classList.toggle('active', active);
       if (active) a.setAttribute('aria-current', 'page');
       else a.removeAttribute('aria-current');
@@ -572,7 +572,7 @@
       ueben: renderPractice,
       pruefung: renderExam,
       schriftlich: () => WrittenUI.render(r.param),
-      ergebnis: () => WrittenUI.renderResult(r.param),
+      archiv: () => WrittenUI.renderArchive(r.param),
       analyse: renderAnalysis,
       einstellungen: renderSettings
     };

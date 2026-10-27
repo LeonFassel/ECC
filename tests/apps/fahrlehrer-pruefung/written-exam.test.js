@@ -113,6 +113,21 @@ function runTests() {
     assert.deepStrictEqual(W.normalizeDoc(null, 'se-x').layers, { 'page-0': [] });
   }));
 
+  results.push(test('text boxes snap to the grid and are kept per page', () => {
+    const box = W.createTextbox('tb-1', 23.7, 48.2);
+    assert.deepStrictEqual(box, { id: 'tb-1', x: 20, y: 45, w: 185, text: '' });
+    assert.strictEqual(W.createTextbox('tb-2', 209, 296).x, 170, 'stays on the page');
+    assert.strictEqual(W.normalizeTextbox({ id: '<x>', x: 1, y: 1, w: 50 }), null);
+    assert.strictEqual(W.normalizeTextbox({ id: 'a', x: 150, y: 10, w: 100, text: 'Hallo' }).w, 60, 'width ends at the page edge');
+    const doc = W.normalizeDoc({ pageCount: 2, layers: {}, textboxes: { 'page-1': [{ id: 'a', x: 10, y: 10, w: 80, text: 'Antwort 1a' }, { id: 'bad' }], 'page-7': [{ id: 'b', x: 1, y: 1, w: 50 }] } }, 'se-x');
+    assert.deepStrictEqual(Object.keys(doc.textboxes), ['page-1']);
+    assert.strictEqual(doc.textboxes['page-1'].length, 1);
+    assert.ok(W.pageHasContent(doc, 1), 'text counts as content');
+    assert.ok(!W.pageHasContent(doc, 0));
+    doc.textboxes['page-1'][0].text = '   ';
+    assert.ok(!W.pageHasContent(doc, 1), 'blank text is no content');
+  }));
+
   results.push(test('written exams have parts with verbatim tasks', () => {
     const ids = new Set();
     for (const exam of written.exams) {

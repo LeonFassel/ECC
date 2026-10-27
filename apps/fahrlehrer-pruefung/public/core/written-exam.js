@@ -98,6 +98,12 @@
 
   const round1 = n => Math.round(n * 10) / 10;
 
+  /** Hat ein Blatt Inhalt (Striche oder Text)? Leere Blätter gehen nicht in die Bewertung. */
+  function pageHasContent(doc, index) {
+    const key = `page-${index}`;
+    return (doc.layers[key] || []).length > 0 || ((doc.textboxes && doc.textboxes[key]) || []).some(box => box.text.trim());
+  }
+
   /** Prüft einen Strich aus dem Speicher; ungültige Striche werden verworfen (null). */
   function normalizeStroke(raw) {
     if (!raw || typeof raw !== 'object' || !TOOLS.includes(raw.tool)) return null;
@@ -222,6 +228,29 @@
   // ------------------------------------------------------------------ Gespeicherter Arbeitsstand
 
   const LAYER_KEY = /^(?:q|page)-(\d{1,2})$/;
+  const PAGE_KEY = /^page-(\d{1,2})$/;
+  const MAX_TEXT_CHARS = 20000;
+
+  /**
+   * Textfeld auf dem karierten Blatt (Eingabe per Tastatur). Position und Breite
+   * in mm auf dem A4-Blatt; links/oben am 5-mm-Karo ausgerichtet.
+   */
+  function normalizeTextbox(raw) {
+    if (!raw || typeof raw !== 'object' || typeof raw.id !== 'string' || !/^[a-z0-9-]{1,40}$/i.test(raw.id)) return null;
+    const num = (value, min, max) => (Number.isFinite(Number(value)) ? Math.min(max, Math.max(min, Number(value))) : null);
+    const x = num(raw.x, 0, 200);
+    const y = num(raw.y, 0, 290);
+    const w = num(raw.w, 20, 210);
+    if (x === null || y === null || w === null) return null;
+    return { id: raw.id, x: round1(x), y: round1(y), w: round1(Math.min(w, 210 - x)), text: String(raw.text || '').slice(0, MAX_TEXT_CHARS) };
+  }
+
+  /** Neues Textfeld an der angetippten Stelle: am Karo ausgerichtet, bis zum rechten Rand breit. */
+  function createTextbox(id, x, y) {
+    const gx = Math.max(5, Math.min(170, Math.floor(x / 5) * 5));
+    const gy = Math.max(5, Math.min(285, Math.floor(y / 5) * 5));
+    return normalizeTextbox({ id, x: gx, y: gy, w: 205 - gx, text: '' });
+  }
 
   /**
    * Arbeitsstand einer Prüfung aus dem Speicher laden; Unbekanntes wird verworfen.
@@ -229,7 +258,7 @@
    * "page-<n>" (karierte Blätter).
    */
   function normalizeDoc(raw, examId) {
-    const doc = { examId, pageCount: 1, layers: { 'page-0': [] } };
+    const doc = { examId, pageCount: 1, layers: { 'page-0': [] }, textboxes: {} };
     if (!raw || typeof raw !== 'object') return doc;
     doc.pageCount = Math.min(60, Math.max(1, Math.floor(Number(raw.pageCount) || 1)));
     const layers = raw.layers && typeof raw.layers === 'object' ? raw.layers : {};
@@ -240,6 +269,14 @@
     }
     for (let i = 0; i < doc.pageCount; i++) {
       if (!doc.layers[`page-${i}`]) doc.layers[`page-${i}`] = [];
+    }
+    doc.textboxes = {};
+    const boxes = raw.textboxes && typeof raw.textboxes === 'object' ? raw.textboxes : {};
+    for (const key of Object.keys(boxes)) {
+      const match = PAGE_KEY.exec(key);
+      if (!match || Number(match[1]) >= doc.pageCount || !Array.isArray(boxes[key])) continue;
+      const list = boxes[key].map(normalizeTextbox).filter(Boolean);
+      if (list.length) doc.textboxes[key] = list;
     }
     return doc;
   }
@@ -267,6 +304,9 @@
     record,
     undo,
     redo,
-    normalizeDoc
+    normalizeDoc,
+    normalizeTextbox,
+    createTextbox,
+    pageHasContent
   };
 });

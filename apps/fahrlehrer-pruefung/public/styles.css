@@ -548,3 +548,21 @@ body.ws-active .main { margin: 0; max-width: none; padding: 0; }
 .ws-grade.bad { color: var(--bad); }
 .ws-part-detail ul { margin: 6px 0 0; padding-left: 20px; }
 .ws-grading .spinner { width: 28px; height: 28px; flex-shrink: 0; color: var(--primary); }
+
+/* Archiv und Textfelder der schriftlichen Prüfung */
+.written-top { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.written-top .segmented { margin: 0; }
+.ws-sheets { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; margin-bottom: 18px; }
+.ws-sheets figure { margin: 0; }
+.ws-sheets figcaption { font-size: .8rem; color: var(--muted); text-align: center; margin-top: 4px; }
+.ws-page { container-type: inline-size; }
+.ws-textlayer { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
+.ws-textbox { position: absolute; left: calc(var(--x) * 100cqw / 210); top: calc(var(--y) * 100cqw / 210); width: calc(var(--w) * 100cqw / 210); }
+.ws-textbox textarea { display: block; width: 100%; min-height: calc(5 * 100cqw / 210); margin: 0; padding: 0 calc(1 * 100cqw / 210); border: 0; outline: none; resize: none; overflow: hidden; background: transparent; color: #111827; font: inherit; font-size: calc(4.2 * 100cqw / 210); line-height: calc(5 * 100cqw / 210); -webkit-user-select: text; user-select: text; }
+.ws-textbox-tools { position: absolute; right: 0; bottom: 100%; display: none; gap: 4px; padding-bottom: 2px; }
+.ws-textbox-btn { appearance: none; display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 0; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); cursor: pointer; }
+.ws-textbox-btn .ws-icon { width: 16px; height: 16px; }
+.ws-textbox-btn[data-tb-move] { cursor: move; touch-action: none; }
+.ws[data-tool="text"] .ws-textbox { pointer-events: auto; outline: 1.5px dashed var(--primary); outline-offset: 1px; border-radius: 2px; }
+.ws[data-tool="text"] .ws-textbox-tools { display: flex; }
+.ws[data-tool="text"] .ink-live { cursor: text; }

@@ -78,7 +78,7 @@
    *  getStrokes()  aktuelle Striche dieser Ebene
    *  getTool()     { tool: 'pen'|'marker'|'eraser', color, width }
    *  fingerDraws() true, wenn auch der Finger zeichnen soll
-   *  onStroke(stroke), onErase(indices), onActivity()
+   *  onStroke(stroke), onErase(indices), onActivity(), onTap(point) (Werkzeug "text")
    */
   function createSurface(options) {
     const host = options.host;
@@ -161,7 +161,13 @@
         // Ohne Capture zeichnet die Fläche trotzdem, solange der Stift darauf bleibt.
       }
       const tool = options.getTool();
+      if (tool.tool === 'none') return;
       const p = point(event);
+      if (tool.tool === 'text') {
+        // Textfeld: erst beim Loslassen anlegen – dann darf iOS die Tastatur öffnen.
+        current = { id: event.pointerId, tap: p, stroke: null };
+        return;
+      }
       current = { id: event.pointerId, eraser: tool.tool === 'eraser', stroke: null };
       if (current.eraser) {
         eraseAt(p);
@@ -175,6 +181,7 @@
     function onMove(event) {
       if (!current || event.pointerId !== current.id) return;
       event.preventDefault();
+      if (current.tap) return;
       const events = typeof event.getCoalescedEvents === 'function' ? event.getCoalescedEvents() : [];
       for (const ev of events.length ? events : [event]) {
         const p = point(ev);
@@ -193,6 +200,10 @@
       if (!current || event.pointerId !== current.id) return;
       const done = current;
       current = null;
+      if (done.tap) {
+        if (event.type === 'pointerup' && options.onTap) options.onTap(done.tap);
+        return;
+      }
       drawLive();
       if (!done.eraser && done.stroke) {
         const stroke = W.normalizeStroke(done.stroke);
