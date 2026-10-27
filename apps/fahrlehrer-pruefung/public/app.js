@@ -6,6 +6,7 @@
   const Prompts = window.FLPrompts;
   const Requests = window.FLAiRequests;
   const WrittenUI = window.FLWrittenUI;
+  const Games = window.FLGames;
   const { subjects, questions, signs } = window.FLData;
   const decks = window.FLData.decks || [];
   const STORAGE_KEY = 'fl-pruefung-state-v1';
@@ -554,7 +555,7 @@
     const key = `${r.name}/${r.param || ''}`;
     document.querySelectorAll('[data-nav]').forEach(a => {
       const active = a.dataset.nav === r.name
-        || (a.dataset.nav === 'faecher' && (r.name === 'fach' || r.name === 'sammlung' || r.name === 'stapel'))
+        || (a.dataset.nav === 'faecher' && ['fach', 'sammlung', 'stapel', 'spiel'].includes(r.name))
         || (a.dataset.nav === 'pruefung' && ['schriftlich', 'archiv', 'archivansicht'].includes(r.name));
       a.classList.toggle('active', active);
       if (active) a.setAttribute('aria-current', 'page');
@@ -574,6 +575,7 @@
       schriftlich: () => WrittenUI.render(r.param),
       archiv: () => WrittenUI.renderArchive(r.param),
       archivansicht: () => WrittenUI.renderViewer(r.param),
+      spiel: () => Games.render(r.param),
       analyse: renderAnalysis,
       einstellungen: renderSettings
     };
@@ -581,6 +583,7 @@
     if (key !== lastRoute && dictation) stopDictation();
     app.innerHTML = (views[r.name] || renderDashboard)();
     WrittenUI.afterRender(r);
+    Games.afterRender(r);
     if (key !== lastRoute) {
       window.scrollTo(0, 0);
       lastRoute = key;
@@ -833,6 +836,7 @@
           </div>
         </div>
       </div>
+      ${Games.hub('alle')}
       <div class="section-title"><h2>Themen</h2></div>
       <div class="grid grid-2">${decks.map(deck => {
         const cards = deckCards(deck.id);
@@ -871,6 +875,7 @@
           <button class="btn" data-action="practice-ids" data-title="Karteikarten – ${esc(deck.name)} – Schwächen" data-ids="${esc(weak.join(','))}" ${weak.length ? '' : 'disabled'}>Nur Schwächen</button>
         </div>
       </div>
+      ${Games.hub(deck.id)}
       ${topics.map(topic => `
       <div class="section-title"><h2>${esc(topic.name)}</h2>
         <button class="btn small-btn" data-action="practice-ids" data-title="${esc(deck.name)} – ${esc(topic.name)}" data-ids="${esc(topic.items.map(q => q.id).join(','))}">${topic.items.length === 1 ? 'Karte üben' : `${topic.items.length} Karten üben`}</button></div>
@@ -1789,6 +1794,18 @@
       render();
     }
   };
+
+  // Lernspiele zu den Karteikarten; Ankreuz- und Aufdeck-Runden zählen für den Lernstand.
+  Object.assign(actions, Games.init({
+    esc,
+    rerender: () => render(),
+    data: window.FLData,
+    Core,
+    record: (id, score, missed) => {
+      state = Core.recordAttempt(state, id, { score, source: 'game', missed: missed || [] }, now());
+      saveState();
+    }
+  }));
 
   // Schriftliche Prüfung (Arbeitsplatz mit Timer, Fragen und kariertem Papier).
   Object.assign(actions, WrittenUI.init({

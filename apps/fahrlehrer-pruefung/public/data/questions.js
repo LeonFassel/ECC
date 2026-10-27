@@ -37,6 +37,17 @@
 })(typeof self !== 'undefined' ? self : this, function (sources) {
   'use strict';
 
+  /** Karteikarten, ihre Stapel und die Spieldaten (Paare für Memory/Zuordnen, Abläufe für Reihenfolge). */
+  function flashcardSection(source) {
+    const data = source || {};
+    const flashcards = data.questions || [];
+    return {
+      flashcards,
+      decks: (data.decks || []).filter(deck => flashcards.some(q => q.deck === deck.id)),
+      games: data.games || { pairs: [], sequences: [] }
+    };
+  }
+
   const { muendlich, technik, sammlung, karteikarten, signExtras, stvo, signImages } = sources;
 
   const subjects = [
@@ -1046,9 +1057,7 @@
   const signs = allSigns.filter(item => item.imageSrc.length > 0);
 
   // Karteikarten: eigenes Fach mit Stapeln (Unterkategorien); nur sichtbar, wenn Karten vorhanden sind.
-  const flashcards = (karteikarten && karteikarten.questions) || [];
-  const decks = ((karteikarten && karteikarten.decks) || [])
-    .filter(deck => flashcards.some(q => q.deck === deck.id));
+  const { flashcards, decks, games } = flashcardSection(karteikarten);
   if (flashcards.length > 0) {
     subjects.push({
       id: 'karteikarten',
@@ -1069,5 +1078,5 @@
   // Sammlungsfragen, die inhaltlich schon als eigene Frage enthalten sind (Verweis statt Dublette).
   const collectionCovered = (sammlung && sammlung.covered) || [];
 
-  return { subjects, questions: all, signs, collectionCovered, decks };
+  return { subjects, questions: all, signs, collectionCovered, decks, games };
 });

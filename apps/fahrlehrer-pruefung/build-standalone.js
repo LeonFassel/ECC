@@ -29,8 +29,10 @@ const SCRIPTS = [
   'core/ai-prompts.js',
   'core/ai-requests.js',
   'core/written-exam.js',
+  'core/games-core.js',
   'ink.js',
   'written-ui.js',
+  'games.js',
   'app.js'
 ];
 const TITLE = 'Fahrlehrer-Prüfungstrainer';

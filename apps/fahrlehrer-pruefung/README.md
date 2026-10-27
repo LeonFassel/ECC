@@ -133,6 +133,16 @@ Der API-Schlüssel bleibt auf dem Server. Der Browser spricht nur mit
 `/api/evaluate` und `/api/examiner`. Ohne Schlüssel läuft die App vollständig
 in der Grundversion.
 
+## Lernspiele zu den Karteikarten
+
+In der *Spielecke* (Karteikarten und jeder Stapel) gibt es fünf Spiele:
+*Lern-Mix* (gemischte Runden aus Ankreuzen, Richtig/Falsch, Zuordnen,
+Reihenfolge und Karte aufdecken), *Memory* (Begriff und Antwort als Paar),
+*Blitzrunde* (60 Sekunden: Stimmt die Antwort?), *Zuordnen* und *Reihenfolge*.
+Richtig/Falsch nutzt die geprüften Ankreuzfragen; Paare und Abläufe stehen in
+den Spieldaten der Karteikarten. Ankreuz- und Aufdeck-Runden zählen für den
+Lernstand, Bestwerte bleiben im Browser gespeichert.
+
 ## Schriftliche Prüfung mit dem Apple Pencil
 
 Unter *Prüfung → Schriftliche Prüfung* wählen Sie eine Prüfung. Der Timer
@@ -180,6 +190,8 @@ apps/fahrlehrer-pruefung/
   public/core/written-exam.js   Schriftliche Prüfung: Timer, Striche, Rückgängig (ohne DOM, getestet)
   public/ink.js                 Zeichenfläche für Apple Pencil, Finger und Maus
   public/written-ui.js          Schriftliche Prüfung: Auswahl und Arbeitsplatz
+  public/core/games-core.js     Lernspiele: Runden, Aussagen, Paare, Sterne (ohne DOM, getestet)
+  public/games.js               Lernspiele: Spielecke und Spiele
   public/data/questions.js      Fächer, Grundfragen und Zusammenführung aller Fragen
   public/data/questions-muendlich.js  Mündliche Prüfungsfragen Verkehrsverhalten/Recht
   public/data/questions-technik.js    Technikfragen

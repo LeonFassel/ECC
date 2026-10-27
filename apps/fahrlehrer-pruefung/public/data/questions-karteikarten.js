@@ -13,5 +13,5 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  return { decks: [], questions: [] };
+  return { decks: [], questions: [], games: { pairs: [], sequences: [] } };
 });
