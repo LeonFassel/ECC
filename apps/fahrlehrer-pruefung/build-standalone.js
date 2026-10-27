@@ -20,6 +20,7 @@ const SCRIPTS = [
   'data/questions-technik.js',
   'data/questions-sammlung.js',
   'data/questions-karteikarten.js',
+  'data/questions-schriftlich.js',
   'data/signs.js',
   'data/signs-stvo.js',
   'data/sign-images.js',
@@ -27,6 +28,9 @@ const SCRIPTS = [
   'core/learning-core.js',
   'core/ai-prompts.js',
   'core/ai-requests.js',
+  'core/written-exam.js',
+  'ink.js',
+  'written-ui.js',
   'app.js'
 ];
 const TITLE = 'Fahrlehrer-Prüfungstrainer';

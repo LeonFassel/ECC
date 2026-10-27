@@ -14,6 +14,7 @@ braucht es kein Framework, keinen Build-Schritt und keine externen Abhängigkeit
 | Üben | Frage erst frei beantworten (tippen oder einsprechen), danach Schnellbewertung, Erklärung in einfacher Sprache, Praxisbeispiel, Musterantwort und mögliche Nachfragen |
 | Heute | Tagesplan aus fälligen Wiederholungen (Leitner-System), Schwächen und neuen Themen |
 | Prüfung | Simulation der mündlichen Prüfung mit Nachfragen, wahlweise mit Trainings-Prüfer (offline) oder KI-Prüfer |
+| Schriftliche Prüfung | Original-Prüfungen zum Auswählen: 5-Stunden-Timer zum selbst Starten, links die Aufgaben, rechts kariertes A4-Papier; Schreiben und Markieren mit Apple Pencil (Kugelschreiber, Textmarker, Radierer, Rückgängig), alles wird automatisch gespeichert |
 | Analyse | Schwache Themen, häufig vergessene Kernpunkte, Fächervergleich, Trend und konkrete Empfehlungen |
 
 ### Lernfortschritt und Wissensstand
@@ -132,6 +133,20 @@ Der API-Schlüssel bleibt auf dem Server. Der Browser spricht nur mit
 `/api/evaluate` und `/api/examiner`. Ohne Schlüssel läuft die App vollständig
 in der Grundversion.
 
+## Schriftliche Prüfung mit dem Apple Pencil
+
+Unter *Prüfung → Schriftliche Prüfung* wählen Sie eine Prüfung. Der Timer
+(5:00:00) läuft erst, wenn Sie auf *Start* tippen, und zählt auch nach dem
+Neuladen richtig weiter. Links stehen die Aufgaben, rechts karierte A4-Blätter
+(*Neue Seite* fügt weitere hinzu); die Trennlinie lässt sich verschieben, auf
+schmalen Bildschirmen schalten Sie zwischen *Fragen*, *Geteilt* und *Blatt* um.
+
+Der Stift schreibt, der Finger scrollt. Mit *Finger* zeichnet auch der Finger.
+Kugelschreiber (3 Farben, 3 Stärken, reagiert auf den Andruck), Textmarker
+(3 Farben) und Radierer funktionieren auf dem Papier und direkt auf den Fragen.
+Striche werden in Blatt-Koordinaten in IndexedDB gespeichert, Timer und
+Einstellungen im `localStorage`.
+
 ## Aufbau
 
 ```text
@@ -145,9 +160,13 @@ apps/fahrlehrer-pruefung/
   public/core/learning-core.js  Lernlogik: Bewertung, Fortschritt, Wiederholung, Analyse
   public/core/ai-prompts.js     Anweisungen für KI-Bewertung und KI-Prüfer (Server und claude.ai)
   public/core/ai-requests.js    Claude-Requests, JSON-Schemas, Auswertung (Server und Website)
+  public/core/written-exam.js   Schriftliche Prüfung: Timer, Striche, Rückgängig (ohne DOM, getestet)
+  public/ink.js                 Zeichenfläche für Apple Pencil, Finger und Maus
+  public/written-ui.js          Schriftliche Prüfung: Auswahl und Arbeitsplatz
   public/data/questions.js      Fächer, Grundfragen und Zusammenführung aller Fragen
   public/data/questions-muendlich.js  Mündliche Prüfungsfragen Verkehrsverhalten/Recht
   public/data/questions-technik.js    Technikfragen
+  public/data/questions-schriftlich.js  Schriftliche Prüfungen (im Repository nur Platzhalter)
   public/data/signs-stvo.js     Alle Verkehrszeichen der StVO: Bezeichnung, amtlicher Text, Kernpunkte (generiert)
   public/data/sign-images.js    Originalabbildungen der Verkehrszeichen aus der StVO (generiert)
   public/data/signs.js          Ergänzungen zu wichtigen Zeichen: Erklärung, Beispiel, typische Fehler

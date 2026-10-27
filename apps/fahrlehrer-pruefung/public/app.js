@@ -5,6 +5,7 @@
   const Core = window.FLCore;
   const Prompts = window.FLPrompts;
   const Requests = window.FLAiRequests;
+  const WrittenUI = window.FLWrittenUI;
   const { subjects, questions, signs } = window.FLData;
   const decks = window.FLData.decks || [];
   const STORAGE_KEY = 'fl-pruefung-state-v1';
@@ -508,7 +509,9 @@
     const r = route();
     const key = `${r.name}/${r.param || ''}`;
     document.querySelectorAll('[data-nav]').forEach(a => {
-      const active = a.dataset.nav === r.name || (a.dataset.nav === 'faecher' && (r.name === 'fach' || r.name === 'sammlung' || r.name === 'stapel'));
+      const active = a.dataset.nav === r.name
+        || (a.dataset.nav === 'faecher' && (r.name === 'fach' || r.name === 'sammlung' || r.name === 'stapel'))
+        || (a.dataset.nav === 'pruefung' && r.name === 'schriftlich');
       a.classList.toggle('active', active);
       if (active) a.setAttribute('aria-current', 'page');
       else a.removeAttribute('aria-current');
@@ -524,12 +527,14 @@
       frage: () => renderSingleQuestion(r.param),
       ueben: renderPractice,
       pruefung: renderExam,
+      schriftlich: () => WrittenUI.render(r.param),
       analyse: renderAnalysis,
       einstellungen: renderSettings
     };
     pendingConfirm = null;
     if (key !== lastRoute && dictation) stopDictation();
     app.innerHTML = (views[r.name] || renderDashboard)();
+    WrittenUI.afterRender(r);
     if (key !== lastRoute) {
       window.scrollTo(0, 0);
       lastRoute = key;
@@ -1310,6 +1315,7 @@
         <h1>Prüfungssimulation</h1>
         <p>Der Prüfer stellt Fragen aus allen Fächern und hakt nach – wie in der echten mündlichen Prüfung.</p>
       </header>
+      ${WrittenUI.examTabs('muendlich')}
       <div class="card">
         <h2>Prüfer wählen</h2>
         <label class="option"><input type="radio" name="exam-mode" value="local" ${aiStatus.ai ? '' : 'checked'}>
@@ -1737,6 +1743,9 @@
       render();
     }
   };
+
+  // Schriftliche Prüfung (Arbeitsplatz mit Timer, Fragen und kariertem Papier).
+  Object.assign(actions, WrittenUI.init({ esc, toast }));
 
   // Zweistufige Bestätigung direkt im Button (Browser-Dialoge sind nicht überall erlaubt).
   function needsConfirmation(el) {
