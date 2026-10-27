@@ -100,8 +100,9 @@ function runTests() {
   results.push(test('flashcards form their own subject with decks as subcategories', () => {
     const dataDir = path.join(__dirname, '../../../apps/fahrlehrer-pruefung/public/data');
     const deckFile = require.resolve(path.join(dataDir, 'questions-karteikarten.js'));
+    const oralFile = require.resolve(path.join(dataDir, 'questions-msammlung.js'));
     const bankFile = require.resolve(path.join(dataDir, 'questions.js'));
-    const saved = { deck: require.cache[deckFile], bank: require.cache[bankFile] };
+    const saved = { deck: require.cache[deckFile], oral: require.cache[oralFile], bank: require.cache[bankFile] };
     const card = (id, deck, topic) => ({
       id, collection: 'karteikarten', subject: 'karteikarten', deck, deckName: deck, card: 2, cardOf: 3, topic,
       question: 'Frage der Vorderseite?', modelAnswer: 'Antwort der Rückseite.',
@@ -109,18 +110,24 @@ function runTests() {
     });
     try {
       require.cache[deckFile] = { id: deckFile, filename: deckFile, loaded: true, exports: {
-        decks: [{ id: 'paedagogik', name: 'Pädagogik' }, { id: 'recht', name: 'Recht' }],
+        decks: [{ id: 'paedagogik', name: 'Pädagogik' }, { id: 'recht', name: 'Recht' }, { id: 'technik', name: 'Technik' }],
         questions: [card('kk-p-002', 'paedagogik', 'Kommunikation'), card('kk-p-003', 'paedagogik', 'Kommunikation')]
       } };
+      // Mündliche Sammlung: neue Frage im Fach und als Karte im passenden Stapel.
+      const oralCard = Object.assign(card('kk-ms-001', 'recht', 'Mündliche Sammlung: FeV'), { cardLabel: 'Mündliche Sammlung Nr. 1' });
+      const oralQuestion = Object.assign({}, oralCard, { id: 'ms-001', collection: 'msammlung', subject: 'recht', topic: 'Fahrerlaubnis' });
+      require.cache[oralFile] = { id: oralFile, filename: oralFile, loaded: true, exports: { questions: [oralQuestion], flashcards: [oralCard] } };
       delete require.cache[bankFile];
       const withCards = require(bankFile);
       const subject = withCards.subjects.find(s => s.id === 'karteikarten');
       assert.ok(subject, 'subject missing');
-      assert.ok(subject.description.includes('Pädagogik') && !subject.description.includes('Recht'), 'empty decks are hidden');
-      assert.deepStrictEqual(withCards.decks.map(d => d.id), ['paedagogik']);
-      assert.strictEqual(withCards.questions.filter(x => x.subject === 'karteikarten').length, 2);
+      assert.ok(subject.description.includes('Pädagogik') && subject.description.includes('Recht') && !subject.description.includes('Technik'), 'empty decks are hidden');
+      assert.deepStrictEqual(withCards.decks.map(d => d.id), ['paedagogik', 'recht']);
+      assert.strictEqual(withCards.questions.filter(x => x.subject === 'karteikarten').length, 3);
+      assert.strictEqual(withCards.questions.find(x => x.id === 'ms-001').subject, 'recht');
     } finally {
       if (saved.deck) require.cache[deckFile] = saved.deck; else delete require.cache[deckFile];
+      if (saved.oral) require.cache[oralFile] = saved.oral; else delete require.cache[oralFile];
       if (saved.bank) require.cache[bankFile] = saved.bank; else delete require.cache[bankFile];
     }
     const placeholder = require(deckFile);

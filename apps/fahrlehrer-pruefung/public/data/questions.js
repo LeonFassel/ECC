@@ -19,6 +19,7 @@
       technik: require('./questions-technik.js'),
       sammlung: require('./questions-sammlung.js'),
       karteikarten: require('./questions-karteikarten.js'),
+      msammlung: require('./questions-msammlung.js'),
       signExtras: require('./signs.js'),
       stvo: require('./signs-stvo.js'),
       signImages: require('./sign-images.js')
@@ -29,6 +30,7 @@
       technik: root.FLQuestionsTechnik,
       sammlung: root.FLQuestionsSammlung,
       karteikarten: root.FLQuestionsKarteikarten,
+      msammlung: root.FLQuestionsMsammlung,
       signExtras: root.FLSigns,
       stvo: root.FLSignsStvo,
       signImages: root.FLSignImages
@@ -38,9 +40,9 @@
   'use strict';
 
   /** Karteikarten, ihre Stapel und die Spieldaten (Paare für Memory/Zuordnen, Abläufe für Reihenfolge). */
-  function flashcardSection(source) {
+  function flashcardSection(source, extra) {
     const data = source || {};
-    const flashcards = data.questions || [];
+    const flashcards = (data.questions || []).concat(extra || []);
     return {
       flashcards,
       decks: (data.decks || []).filter(deck => flashcards.some(q => q.deck === deck.id)),
@@ -48,7 +50,7 @@
     };
   }
 
-  const { muendlich, technik, sammlung, karteikarten, signExtras, stvo, signImages } = sources;
+  const { muendlich, technik, sammlung, karteikarten, msammlung, signExtras, stvo, signImages } = sources;
 
   const subjects = [
     { id: 'zeichen', name: 'Verkehrszeichen', short: 'Zeichen', color: '#2563eb', description: 'Vorschriftzeichen, Gefahrzeichen, Richtzeichen, Markierungen und ihre Rangfolge.' },
@@ -1057,7 +1059,7 @@
   const signs = allSigns.filter(item => item.imageSrc.length > 0);
 
   // Karteikarten: eigenes Fach mit Stapeln (Unterkategorien); nur sichtbar, wenn Karten vorhanden sind.
-  const { flashcards, decks, games } = flashcardSection(karteikarten);
+  const { flashcards, decks, games } = flashcardSection(karteikarten, msammlung && msammlung.flashcards);
   if (flashcards.length > 0) {
     subjects.push({
       id: 'karteikarten',
@@ -1072,6 +1074,7 @@
     .concat((muendlich && muendlich.questions) || [])
     .concat((technik && technik.questions) || [])
     .concat((sammlung && sammlung.questions) || [])
+    .concat((msammlung && msammlung.questions) || [])
     .concat(flashcards)
     .concat(allSigns);
 

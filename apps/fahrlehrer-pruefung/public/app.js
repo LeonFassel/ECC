@@ -744,6 +744,7 @@
     const stat = Core.subjectStats(window.FLData, state, ts).find(s => s.subject.id === id);
     const list = questions.filter(q => q.subject === id);
     const collection = list.filter(q => q.collection === 'sammlung');
+    const oral = list.filter(q => q.collection === 'msammlung');
 
     return `
       <header class="page-head">
@@ -769,6 +770,7 @@
             <button class="btn ${id === 'zeichen' ? '' : 'primary'}" data-action="practice-subject" data-subject="${esc(id)}">Alle Fragen üben</button>
             <button class="btn" data-action="practice-subject-weak" data-subject="${esc(id)}" ${stat.levels.schwach + stat.levels.mittel === 0 ? 'disabled' : ''}>Nur Schwächen</button>
             ${collection.length ? `<button class="btn" data-action="practice-ids" data-title="${esc(subject.name)} – Prüfungsfragen-Sammlung" data-ids="${esc(collection.map(q => q.id).join(','))}">Sammlungsfragen (${collection.length})</button>` : ''}
+            ${oral.length ? `<button class="btn" data-action="practice-ids" data-title="${esc(subject.name)} – Mündliche Prüfungsfragen" data-ids="${esc(oral.map(q => q.id).join(','))}">Mündliche Sammlung (${oral.length})</button>` : ''}
           </div>
         </div>
       </div>
@@ -784,7 +786,12 @@
 
   function deckCards(deckId) {
     return questions.filter(q => q.collection === 'karteikarten' && q.deck === deckId)
-      .sort((a, b) => a.card - b.card);
+      .sort((a, b) => cardOrder(a) - cardOrder(b));
+  }
+
+  // Karten aus den PDFs zuerst (nach Kartennummer), danach die aus der mündlichen Sammlung.
+  function cardOrder(q) {
+    return q.card || 100000 + (q.number || 0);
   }
 
   /** Themen (Überschriften der Karten) in der Reihenfolge des Stapels. */
@@ -887,7 +894,7 @@
     const mastery = Core.questionMastery(state.attempts[q.id], ts);
     const oneLine = q.question.replace(/\s*\n+\s*/g, ' ').trim();
     const preview = oneLine.length > 180 ? `${oneLine.slice(0, 177)} …` : oneLine;
-    return `<li><div><a href="#/frage/${esc(q.id)}">${esc(preview)}</a><div class="small muted">Karte ${esc(q.card)} von ${esc(q.cardOf)}${hasChoice(q) ? ' · <span class="chip">Ankreuzen</span>' : ''}</div></div>${levelChip(mastery)}</li>`;
+    return `<li><div><a href="#/frage/${esc(q.id)}">${esc(preview)}</a><div class="small muted">${q.cardLabel ? esc(q.cardLabel) : `Karte ${esc(q.card)} von ${esc(q.cardOf)}`}${hasChoice(q) ? ' · <span class="chip">Ankreuzen</span>' : ''}</div></div>${levelChip(mastery)}</li>`;
   }
 
   // Fotos der Karteikarten in voller Breite; Antippen öffnet die Vergrößerung.
@@ -940,7 +947,8 @@
     const mastery = Core.questionMastery(state.attempts[q.id], ts);
     const firstLine = q.question.split('\n')[0];
     const preview = firstLine.length > 180 ? `${firstLine.slice(0, 177)} …` : firstLine;
-    const badge = q.collection === 'sammlung' ? `<span class="chip">${esc(q.sectionName)} Nr. ${esc(q.numbers.join(', '))}</span> ` : '';
+    const badge = q.collection === 'sammlung' ? `<span class="chip">${esc(q.sectionName)} Nr. ${esc(q.numbers.join(', '))}</span> `
+      : q.collection === 'msammlung' ? `<span class="chip">Mündliche Sammlung Nr. ${esc(q.number)}</span> ` : '';
     return `<li><div><a href="#/frage/${esc(q.id)}">${esc(q.topic)}</a><div class="small muted">${badge}${esc(preview)}</div></div>${levelChip(mastery)}</li>`;
   }
 
@@ -1028,7 +1036,7 @@
     const reviewing = practice.phase !== 'answer';
     // Bei Verkehrszeichen und Sammlungsfragen bleibt das Thema verborgen, bis die Antwort abgegeben ist
     // (der Thementitel kann sonst die Lösung verraten).
-    const topicChip = (isSignCard(q) || q.collection === 'sammlung') && !reviewing ? '' : `<span class="chip">${esc(q.topic)}</span>`;
+    const topicChip = (isSignCard(q) || q.collection === 'sammlung' || q.collection === 'msammlung') && !reviewing ? '' : `<span class="chip">${esc(q.topic)}</span>`;
     const head = `
       <div class="progress-meta"><span class="page-head-nav">${backArrow()}<span>${esc(practice.title)}</span></span><span>Frage ${practice.index + 1} von ${practice.queue.length}</span></div>
       ${bar(practice.index / practice.queue.length, 'thin')}
@@ -1058,7 +1066,7 @@
         ${q.explanation ? `<div class="panel info"><h3>Einfach erklärt</h3><p>${esc(q.explanation)}</p></div>` : ''}
         ${q.example ? `<div class="panel"><h3>Praxisbeispiel</h3><p>${esc(q.example)}</p></div>` : ''}
         ${q.note ? `<div class="panel warn"><h3>Hinweis</h3><p>${esc(q.note)}</p></div>` : ''}
-        <details class="disclosure" open><summary>${q.collection === 'karteikarten' ? 'Antwort (Rückseite der Karte)' : 'Musterantwort'}</summary><p class="pre-line">${esc(q.modelAnswer)}</p>
+        <details class="disclosure" open><summary>${q.collection === 'karteikarten' && !q.cardLabel ? 'Antwort (Rückseite der Karte)' : 'Musterantwort'}</summary><p class="pre-line">${esc(q.modelAnswer)}</p>
           ${cardFigureStage(q.answerFigures)}
           <p class="small muted">Kernpunkte: ${q.keyPoints.map(p => esc(p.label)).join(' · ')}</p>
           ${q.source ? `<p class="small muted">Quelle der Frage: ${esc(q.source)}</p>` : ''}

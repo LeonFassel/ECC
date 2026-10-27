@@ -20,6 +20,7 @@ const SCRIPTS = [
   'data/questions-technik.js',
   'data/questions-sammlung.js',
   'data/questions-karteikarten.js',
+  'data/questions-msammlung.js',
   'data/questions-schriftlich.js',
   'data/signs.js',
   'data/signs-stvo.js',

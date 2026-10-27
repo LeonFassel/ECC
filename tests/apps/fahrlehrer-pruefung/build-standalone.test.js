@@ -49,7 +49,7 @@ function runTests() {
   results.push(test('inlined scripts cannot close their script tag early', () => {
     const html = build();
     const scriptBodies = html.split('<script>').slice(1).map(part => part.split('</script>')[0]);
-    assert.strictEqual(scriptBodies.length, 18);
+    assert.strictEqual(scriptBodies.length, 19);
   }));
 
   const passed = results.filter(Boolean).length;
