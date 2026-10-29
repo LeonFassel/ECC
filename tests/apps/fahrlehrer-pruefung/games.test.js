@@ -98,6 +98,26 @@ function runTests() {
     assert.strictEqual(G.mistakeFraction(5, 9), 0);
   }));
 
+  results.push(test('recently played entries come last and are remembered', () => {
+    const pairs = data.games.pairs.filter(p => p.deck === 'recht');
+    const recent = new Set(pairs.slice(0, 2).map(G.keyOf.pair));
+    for (let i = 0; i < 10; i++) {
+      const picked = G.pickPairs(pairs, 2, G.seeded(`r${i}`), recent);
+      assert.ok(picked.every(p => !recent.has(G.keyOf.pair(p))), 'fresh pairs preferred');
+    }
+    const all = G.statements(G.pool(data, 'paedagogik').mcCards);
+    const played = new Set(all.slice(0, 2).map(G.keyOf.statement));
+    for (let i = 0; i < 10; i++) {
+      // Richtige und falsche Aussagen werden getrennt gezogen; die erste ist immer neu.
+      const next = G.pickStatements(all, 2, G.seeded(`s${i}`), played);
+      assert.ok(!played.has(G.keyOf.statement(next[0])), 'fresh statement first');
+    }
+    const game = { pairs: pairs.slice(0, 1), rounds: [{ type: 'mc', cardId: 'kk-p-002' }, { type: 'order', sequence: data.games.sequences[0] }] };
+    const keys = G.usedKeys(game);
+    assert.deepStrictEqual(keys, [G.keyOf.pair(pairs[0]), 'c:kk-p-002', G.keyOf.sequence(data.games.sequences[0])]);
+    assert.deepStrictEqual(G.rememberKeys(['a', 'b', 'c'], ['c', 'd'], 3), ['c', 'd', 'a']);
+  }));
+
   results.push(test('mix never repeats a round type back to back and skips missing data', () => {
     const rounds = G.buildMix(G.pool(data, 'paedagogik'), 12, G.seeded('mix'));
     assert.strictEqual(rounds.length, 12);

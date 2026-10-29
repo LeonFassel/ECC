@@ -30,6 +30,7 @@
       version: STATE_VERSION,
       attempts: {},
       seen: {},
+      lastSeen: {},
       daily: {},
       settings: { dailyGoal: 8 }
     };
@@ -42,6 +43,7 @@
       version: STATE_VERSION,
       attempts: isPlainObject(raw.attempts) ? raw.attempts : {},
       seen: isPlainObject(raw.seen) ? raw.seen : {},
+      lastSeen: isPlainObject(raw.lastSeen) ? raw.lastSeen : {},
       daily: isPlainObject(raw.daily) ? raw.daily : {},
       settings: Object.assign({}, base.settings, isPlainObject(raw.settings) ? raw.settings : {})
     };
@@ -234,14 +236,50 @@
 
     const seen = Object.assign({}, state.seen);
     if (!seen[questionId]) seen[questionId] = ts;
+    const lastSeen = Object.assign({}, state.lastSeen, { [questionId]: ts });
 
-    return Object.assign({}, state, { attempts, daily, seen });
+    return Object.assign({}, state, { attempts, daily, seen, lastSeen });
   }
 
   function markSeen(state, questionId, now) {
-    if (state.seen[questionId]) return state;
-    const seen = Object.assign({}, state.seen, { [questionId]: typeof now === 'number' ? now : Date.now() });
-    return Object.assign({}, state, { seen });
+    const ts = typeof now === 'number' ? now : Date.now();
+    const lastSeen = Object.assign({}, state.lastSeen, { [questionId]: ts });
+    if (state.seen[questionId]) return Object.assign({}, state, { lastSeen });
+    const seen = Object.assign({}, state.seen, { [questionId]: ts });
+    return Object.assign({}, state, { seen, lastSeen });
+  }
+
+  /** Merkt, wann eine Frage zuletzt gezeigt wurde (auch wenn sie übersprungen wird). */
+  function markShown(state, questionId, now) {
+    const ts = typeof now === 'number' ? now : Date.now();
+    return Object.assign({}, state, { lastSeen: Object.assign({}, state.lastSeen, { [questionId]: ts }) });
+  }
+
+  /** Zeitpunkt, zu dem die Frage zuletzt gezeigt oder beantwortet wurde (0 = noch nie). */
+  function lastSeenAt(state, questionId) {
+    const attempts = state.attempts[questionId] || [];
+    const answered = attempts.length ? attempts[attempts.length - 1].ts : 0;
+    return Math.max(Number((state.lastSeen || {})[questionId]) || 0, answered);
+  }
+
+  /**
+   * Reihenfolge für eine Übungsrunde: Noch nie gezeigte Fragen zuerst (zufällig),
+   * danach die übrigen – was am längsten her ist, kommt eher dran. Die Reihenfolge
+   * der gezeigten Fragen ist nur grob sortiert und zusätzlich gemischt, damit sie
+   * nicht jedes Mal gleich ist.
+   */
+  function freshOrder(ids, state, rand) {
+    const r = rand || Math.random;
+    const fresh = [];
+    const shown = [];
+    for (const id of ids) {
+      const at = lastSeenAt(state, id);
+      if (at) shown.push({ id, at });
+      else fresh.push(id);
+    }
+    const spread = Math.max(4, Math.round(shown.length * 0.25));
+    const ranked = shown.sort((a, b) => a.at - b.at).map((x, i) => ({ id: x.id, key: i + r() * spread }));
+    return shuffle(fresh, r).concat(ranked.sort((a, b) => a.key - b.key).map(x => x.id));
   }
 
   // ------------------------------------------------------------------ Kennzahlen je Frage
@@ -594,6 +632,9 @@
     combineScores,
     recordAttempt,
     markSeen,
+    markShown,
+    lastSeenAt,
+    freshOrder,
     questionMastery,
     leitnerBox,
     isDue,

@@ -45,6 +45,24 @@
 
   const norm = text => String(text || '').toLowerCase().replace(/\s+/g, ' ').trim();
 
+  /** Schlüssel, unter denen sich die Spiele merken, was zuletzt dran war. */
+  const keyOf = {
+    card: card => `c:${card.id}`,
+    pair: pair => `p:${pair.cardId}|${pair.left}`,
+    statement: s => `s:${s.key}`,
+    sequence: seq => `q:${seq.cardId}|${seq.title}`
+  };
+
+  /**
+   * Zufällige Reihenfolge, in der zuletzt gespielte Einträge (recent) hinten stehen –
+   * so kommen bei jeder Runde möglichst andere Fragen dran.
+   */
+  function freshFirst(list, key, recent, rand) {
+    const mixed = shuffle(list, rand);
+    if (!recent || !recent.size) return mixed;
+    return mixed.filter(x => !recent.has(key(x))).concat(mixed.filter(x => recent.has(key(x))));
+  }
+
   /** Karten und Spieldaten eines Stapels ("alle" = alle Stapel). */
   function pool(data, deck) {
     const inDeck = item => deck === 'alle' || item.deck === deck;
@@ -70,13 +88,13 @@
   }
 
   /** Ausgewogene Mischung: etwa gleich viele richtige und falsche Aussagen. */
-  function pickStatements(all, count, rand) {
-    const right = shuffle(all.filter(s => s.correct), rand);
-    const wrong = shuffle(all.filter(s => !s.correct), rand);
+  function pickStatements(all, count, rand, recent) {
+    const right = freshFirst(all.filter(s => s.correct), keyOf.statement, recent, rand);
+    const wrong = freshFirst(all.filter(s => !s.correct), keyOf.statement, recent, rand);
     const out = [];
     while (out.length < count && (right.length || wrong.length)) {
       const takeRight = right.length && (!wrong.length || (rand || Math.random)() < 0.5);
-      out.push(takeRight ? right.pop() : wrong.pop());
+      out.push(takeRight ? right.shift() : wrong.shift());
     }
     return out;
   }
@@ -85,11 +103,11 @@
    * Paare für Memory/Zuordnen: höchstens ein Paar je Karte und keine doppelten
    * Texte, damit jede Antwort eindeutig zu genau einem Begriff passt.
    */
-  function pickPairs(pairs, count, rand) {
+  function pickPairs(pairs, count, rand, recent) {
     const out = [];
     const cards = new Set();
     const texts = new Set();
-    for (const pair of shuffle(pairs, rand)) {
+    for (const pair of freshFirst(pairs, keyOf.pair, recent, rand)) {
       if (out.length >= count) break;
       const l = norm(pair.left);
       const r = norm(pair.right);
@@ -136,7 +154,7 @@
    * Lern-Mix: Runden verschiedener Art, nie zweimal dieselbe Art hintereinander.
    * Arten ohne passende Daten im Stapel entfallen.
    */
-  function buildMix(p, count, rand) {
+  function buildMix(p, count, rand, recent) {
     const r = rand || Math.random;
     const truths = statements(p.mcCards);
     const freeCards = p.cards.filter(q => !q.mc);
@@ -157,24 +175,47 @@
       let pick = r() * total;
       const kind = options.find(k => (pick -= k.weight) < 0) || options[0];
       last = kind.type;
-      rounds.push(makeRound(kind.type, p, truths, freeCards, usedCards, r));
+      rounds.push(makeRound(kind.type, { p, truths, freeCards, used: usedCards, rand: r, recent }));
     }
     return rounds;
   }
 
-  function freshCard(list, used, rand) {
-    const fresh = list.filter(q => !used.has(q.id));
-    const card = shuffle(fresh.length ? fresh : list, rand)[0];
+  function freshCard(list, used, rand, recent) {
+    const unused = list.filter(q => !used.has(q.id));
+    const card = freshFirst(unused.length ? unused : list, keyOf.card, recent, rand)[0];
     used.add(card.id);
     return card;
   }
 
-  function makeRound(type, p, truths, freeCards, used, rand) {
-    if (type === 'mc') return { type, cardId: freshCard(p.mcCards, used, rand).id };
-    if (type === 'flip') return { type, cardId: freshCard(freeCards, used, rand).id };
-    if (type === 'truth') return { type, items: pickStatements(truths, 3, rand) };
-    if (type === 'match') return { type, pairs: pickPairs(p.pairs, 4, rand) };
-    return { type: 'order', sequence: shuffle(p.sequences, rand)[0] };
+  function makeRound(type, { p, truths, freeCards, used, rand, recent }) {
+    if (type === 'mc') return { type, cardId: freshCard(p.mcCards, used, rand, recent).id };
+    if (type === 'flip') return { type, cardId: freshCard(freeCards, used, rand, recent).id };
+    if (type === 'truth') return { type, items: pickStatements(truths, 3, rand, recent) };
+    if (type === 'match') return { type, pairs: pickPairs(p.pairs, 4, rand, recent) };
+    return { type: 'order', sequence: freshFirst(p.sequences, keyOf.sequence, recent, rand)[0] };
+  }
+
+  /** Schlüssel aller Einträge, die ein Spiel benutzt (für "zuletzt gespielt"). */
+  function usedKeys(game) {
+    const keys = [];
+    const add = (list, key) => (list || []).forEach(x => x && keys.push(key(x)));
+    add(game.pairs, keyOf.pair);
+    add(game.items, keyOf.statement);
+    if (game.sequence) keys.push(keyOf.sequence(game.sequence));
+    for (const round of game.rounds || []) {
+      if (round.cardId) keys.push(`c:${round.cardId}`);
+      add(round.items, keyOf.statement);
+      add(round.pairs, keyOf.pair);
+      if (round.sequence) keys.push(keyOf.sequence(round.sequence));
+    }
+    return keys;
+  }
+
+  /** Neue Schlüssel vorne anfügen, ohne Dubletten, höchstens limit Einträge. */
+  function rememberKeys(list, keys, limit) {
+    const fresh = Array.from(new Set(keys));
+    const seen = new Set(fresh);
+    return fresh.concat((list || []).filter(k => !seen.has(k))).slice(0, limit);
   }
 
   return {
@@ -189,6 +230,10 @@
     stars,
     memoryFraction,
     mistakeFraction,
-    buildMix
+    buildMix,
+    keyOf,
+    freshFirst,
+    usedKeys,
+    rememberKeys
   };
 });

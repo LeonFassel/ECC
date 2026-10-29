@@ -1002,13 +1002,14 @@
   }
 
   /**
-   * Startet eine Übungsrunde. Fragen kommen in jedes Mal neuer Zufallsreihenfolge;
-   * nur der Tagesplan behält seine Priorisierung (`keepOrder`).
+   * Startet eine Übungsrunde. Fragen kommen in jedes Mal neuer Reihenfolge – noch
+   * nicht gezeigte und lange nicht gesehene zuerst (Core.freshOrder); nur der
+   * Tagesplan behält seine Priorisierung (`keepOrder`).
    */
   function startPractice(ids, title, options) {
     const keepOrder = Boolean(options && options.keepOrder);
     const valid = Array.from(new Set(ids)).filter(id => questionById.has(id));
-    const queue = keepOrder ? valid : shuffled(valid);
+    const queue = keepOrder ? valid : Core.freshOrder(valid, state);
     if (queue.length === 0) {
       toast('Keine passenden Fragen gefunden.');
       return;
@@ -1034,16 +1035,8 @@
 
     const q = questionById.get(practice.queue[practice.index]);
     const reviewing = practice.phase !== 'answer';
-    // Bei Verkehrszeichen und Sammlungsfragen bleibt das Thema verborgen, bis die Antwort abgegeben ist
-    // (der Thementitel kann sonst die Lösung verraten).
-    const topicChip = (isSignCard(q) || q.collection === 'sammlung' || q.collection === 'msammlung') && !reviewing ? '' : `<span class="chip">${esc(q.topic)}</span>`;
-    const head = `
-      <div class="progress-meta"><span class="page-head-nav">${backArrow()}<span>${esc(practice.title)}</span></span><span>Frage ${practice.index + 1} von ${practice.queue.length}</span></div>
-      ${bar(practice.index / practice.queue.length, 'thin')}
-      <div class="card section">
-        <div style="display:flex;gap:8px;flex-wrap:wrap">${subjectChip(q.subject)}${q.deckName ? `<span class="chip">${esc(q.deckName)}</span>` : ''}${topicChip}<span class="chip">Schwierigkeit ${'●'.repeat(q.difficulty)}${'○'.repeat(3 - q.difficulty)}</span></div>
-        ${questionStage(q)}
-        <p class="question-text${q.question.length > 160 ? ' long' : ''}">${esc(q.question)}</p>`;
+    markShown(q.id);
+    const head = practiceHead(q, reviewing);
 
     if (hasChoice(q)) return `${head}${renderChoice(q, reviewing)}`;
 
@@ -1190,6 +1183,44 @@
     practice.aiError = null;
     practice.aiLoading = false;
     practice.choice = null;
+  }
+
+  function practiceHead(q, reviewing) {
+    // Bei Verkehrszeichen und Sammlungsfragen bleibt das Thema verborgen, bis die Antwort abgegeben ist
+    // (der Thementitel kann sonst die Lösung verraten).
+    const topicChip = (isSignCard(q) || q.collection === 'sammlung' || q.collection === 'msammlung') && !reviewing ? '' : `<span class="chip">${esc(q.topic)}</span>`;
+    const reshuffle = practice.queue.length - practice.index > 1
+      ? `<button type="button" class="btn small-btn reshuffle-btn" data-action="practice-reshuffle" title="Restliche Fragen neu mischen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h3l10 10h3M4 17h3l3-3M14 10l3-3h3M18 4l3 3-3 3M18 14l3 3-3 3"/></svg>Neu mischen</button>`
+      : '';
+    return `
+      <div class="progress-meta"><span class="page-head-nav">${backArrow()}<span>${esc(practice.title)}</span></span><span class="progress-side">${reshuffle}<span>Frage ${practice.index + 1} von ${practice.queue.length}</span></span></div>
+      ${bar(practice.index / practice.queue.length, 'thin')}
+      <div class="card section">
+        <div style="display:flex;gap:8px;flex-wrap:wrap">${subjectChip(q.subject)}${q.deckName ? `<span class="chip">${esc(q.deckName)}</span>` : ''}${topicChip}<span class="chip">Schwierigkeit ${'●'.repeat(q.difficulty)}${'○'.repeat(3 - q.difficulty)}</span></div>
+        ${questionStage(q)}
+        <p class="question-text${q.question.length > 160 ? ' long' : ''}">${esc(q.question)}</p>`;
+  }
+
+  // Gezeigte Frage merken, damit sie beim nächsten Mischen weiter hinten landet.
+  function markShown(id) {
+    const key = `${practice.index}:${id}`;
+    if (practice.shownKey === key) return;
+    practice.shownKey = key;
+    state = Core.markShown(state, id, now());
+    saveState();
+  }
+
+  /** Restliche Fragen der Runde neu mischen; die aktuelle Frage kommt dabei nicht zuerst. */
+  function reshufflePractice() {
+    stopDictation();
+    const current = practice.queue[practice.index];
+    const rest = shuffled(practice.queue.slice(practice.index));
+    if (rest.length > 1 && rest[0] === current) rest.push(rest.shift());
+    practice.queue = practice.queue.slice(0, practice.index).concat(rest);
+    resetPracticeAnswer();
+    toast('Restliche Fragen neu gemischt.');
+    render();
+    window.scrollTo(0, 0);
   }
 
   function moveInPractice(step) {
@@ -1740,6 +1771,7 @@
     reveal: () => stopDictation(() => submitAnswer(true)),
     'practice-prev': () => moveInPractice(-1),
     'practice-skip': () => moveInPractice(1),
+    'practice-reshuffle': () => reshufflePractice(),
     'ai-evaluate': () => requestAiEvaluation(),
     rate: el => rate(Number(el.dataset.score)),
     'exam-start': startExam,

@@ -10,27 +10,42 @@
   const STORE = 'fl-games-v1';
   const BLITZ_MS = 60 * 1000;
   const MIX_ROUNDS = 8;
+  // So viele zuletzt gespielte Einträge je Stapel kommen erst später wieder dran.
+  const RECENT_LIMIT = 150;
 
   let ctx = null;
   let game = null;
   let timer = null;
-  const best = loadBest();
+  const stored = loadStore();
+  const best = stored.best;
+  const recent = stored.recent;
 
-  function loadBest() {
+  function loadStore() {
+    const plain = value => (value && typeof value === 'object' && !Array.isArray(value) ? value : {});
     try {
-      const raw = JSON.parse(root.localStorage.getItem(STORE) || 'null');
-      return raw && typeof raw === 'object' && raw.best && typeof raw.best === 'object' ? raw.best : {};
+      const raw = plain(JSON.parse(root.localStorage.getItem(STORE) || 'null'));
+      return { best: plain(raw.best), recent: plain(raw.recent) };
     } catch (_err) {
-      return {};
+      return { best: {}, recent: {} };
     }
   }
 
   function saveBest() {
     try {
-      root.localStorage.setItem(STORE, JSON.stringify({ best }));
+      root.localStorage.setItem(STORE, JSON.stringify({ best, recent }));
     } catch (_err) {
       // privater Modus: Bestwerte nur bis zum Neuladen
     }
+  }
+
+  function recentSet(deck) {
+    return new Set(Array.isArray(recent[deck]) ? recent[deck] : []);
+  }
+
+  function remember(deck, keys) {
+    if (!keys.length) return;
+    recent[deck] = G.rememberKeys(recent[deck], keys, RECENT_LIMIT);
+    saveBest();
   }
 
   function esc(value) {
@@ -121,19 +136,29 @@
   function newGame(param) {
     stopTimer();
     const { type, deck } = parse(param);
+    const created = createGame(type, deck);
+    if (!created) return null;
+    created.key = param;
+    // Blitzrunde: gemerkt wird beim Ende nur, was wirklich dran war.
+    if (type !== 'blitz') remember(deck, G.usedKeys(created));
+    return created;
+  }
+
+  function createGame(type, deck) {
     const p = G.pool(ctx.data, deck);
-    const base = { key: param, type, deck, finished: false, startedAt: Date.now() };
+    const seen = recentSet(deck);
+    const base = { type, deck, finished: false, startedAt: Date.now() };
     if (type === 'memory') {
-      const pairs = G.pickPairs(p.pairs, 6);
+      const pairs = G.pickPairs(p.pairs, 6, undefined, seen);
       return Object.assign(base, { pairs, tiles: G.memoryTiles(pairs), open: [], matched: [], moves: 0, lock: false, just: null });
     }
     if (type === 'blitz') {
-      return Object.assign(base, { items: G.pickStatements(G.statements(p.mcCards), 200), index: 0, score: 0, wrong: 0, started: false, endsAt: 0, feedback: null });
+      return Object.assign(base, { items: G.pickStatements(G.statements(p.mcCards), 200, undefined, seen), index: 0, score: 0, wrong: 0, started: false, endsAt: 0, feedback: null });
     }
-    if (type === 'match') return Object.assign(base, matchState(G.pickPairs(p.pairs, 5)));
-    if (type === 'order') return Object.assign(base, orderState(G.shuffle(p.sequences)[0]));
+    if (type === 'match') return Object.assign(base, matchState(G.pickPairs(p.pairs, 5, undefined, seen)));
+    if (type === 'order') return Object.assign(base, orderState(G.freshFirst(p.sequences, G.keyOf.sequence, seen)[0]));
     if (type === 'mix') {
-      const rounds = G.buildMix(p, MIX_ROUNDS);
+      const rounds = G.buildMix(p, MIX_ROUNDS, undefined, seen);
       return Object.assign(base, { rounds, index: 0, points: [], round: rounds.length ? roundState(rounds[0]) : null });
     }
     return null;
@@ -352,6 +377,7 @@
   function finish(fraction, bestEntry, better) {
     game.finished = true;
     stopTimer();
+    if (game.type === 'blitz') remember(game.deck, G.usedKeys({ items: game.items.slice(0, game.index + 1) }));
     game.isBest = saveResult(`${game.type}-${game.deck}`, bestEntry, better);
     rerender();
   }

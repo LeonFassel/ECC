@@ -267,6 +267,31 @@ function runTests() {
     assert.strictEqual(s1.seen['recht-02'], NOW);
   }));
 
+  results.push(test('freshOrder puts unseen questions first and recently seen ones last', () => {
+    let s = Core.createState();
+    s = Core.recordAttempt(s, 'q-old', { score: 1 }, NOW - 30 * DAY);
+    s = Core.markShown(s, 'q-recent', NOW);
+    s = Core.markSeen(s, 'q-mid', NOW - 5 * DAY);
+    assert.strictEqual(Core.lastSeenAt(s, 'q-recent'), NOW);
+    assert.strictEqual(Core.lastSeenAt(s, 'q-new'), 0);
+    const ids = ['q-recent', 'q-mid', 'q-old', 'q-new', 'q-new2'];
+    for (let i = 0; i < 20; i++) {
+      const order = Core.freshOrder(ids, s);
+      assert.deepStrictEqual(order.slice().sort(), ids.slice().sort());
+      assert.deepStrictEqual(order.slice(0, 2).sort(), ['q-new', 'q-new2']);
+    }
+    // Viele gesehene Fragen: die zuletzt gezeigten landen fast immer in der hinteren Hälfte.
+    let many = Core.createState();
+    const seenIds = Array.from({ length: 40 }, (_, i) => `s-${i}`);
+    seenIds.forEach((id, i) => { many = Core.markShown(many, id, NOW - (40 - i) * 1000); });
+    const order = Core.freshOrder(seenIds, many);
+    assert.ok(order.indexOf('s-39') >= 20 && order.indexOf('s-0') < 20, 'stale first, recent last');
+    const again = Core.freshOrder(seenIds, many);
+    assert.notDeepStrictEqual(order, again, 'not the same order every time');
+    assert.deepStrictEqual(Core.migrateState({ lastSeen: { a: 1 } }).lastSeen, { a: 1 });
+    assert.deepStrictEqual(Core.migrateState({ lastSeen: [] }).lastSeen, {});
+  }));
+
   results.push(test('questionMastery weights recent attempts and decays slowly', () => {
     assert.strictEqual(Core.questionMastery([], NOW), null);
     const attempts = [{ ts: NOW - DAY, score: 0 }, { ts: NOW, score: 1 }];

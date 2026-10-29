@@ -42,11 +42,17 @@
   /** Karteikarten, ihre Stapel und die Spieldaten (Paare für Memory/Zuordnen, Abläufe für Reihenfolge). */
   function flashcardSection(source, extra) {
     const data = source || {};
-    const flashcards = (data.questions || []).concat(extra || []);
+    const more = extra || {};
+    const flashcards = (data.questions || []).concat(more.flashcards || []);
+    const games = data.games || {};
+    const moreGames = more.games || {};
     return {
       flashcards,
       decks: (data.decks || []).filter(deck => flashcards.some(q => q.deck === deck.id)),
-      games: data.games || { pairs: [], sequences: [] }
+      games: {
+        pairs: (games.pairs || []).concat(moreGames.pairs || []),
+        sequences: (games.sequences || []).concat(moreGames.sequences || [])
+      }
     };
   }
 
@@ -1059,7 +1065,7 @@
   const signs = allSigns.filter(item => item.imageSrc.length > 0);
 
   // Karteikarten: eigenes Fach mit Stapeln (Unterkategorien); nur sichtbar, wenn Karten vorhanden sind.
-  const { flashcards, decks, games } = flashcardSection(karteikarten, msammlung && msammlung.flashcards);
+  const { flashcards, decks, games } = flashcardSection(karteikarten, msammlung);
   if (flashcards.length > 0) {
     subjects.push({
       id: 'karteikarten',
