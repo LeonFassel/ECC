@@ -24,6 +24,7 @@ const MAX_BODY_BYTES = 64 * 1024;
 const MAX_WRITTEN_BODY_BYTES = 40 * 1024 * 1024;
 const MAX_WRITTEN_PAGES = 40;
 const MAX_EXAM_QUESTIONS = 8;
+const MAX_SEARCH_SOURCES = 6;
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -110,6 +111,30 @@ function createAppServer(options) {
     ? opts.aiService
     : (client => (client ? createAiService(client) : null))(loadDefaultClient());
 
+  // Kurzantwort der Suche: nur aus den Musterantworten der übergebenen Fragen.
+  async function searchAnswer(res, body) {
+    const query = typeof body.query === 'string' ? body.query.trim() : '';
+    const ids = Array.isArray(body.questionIds) ? body.questionIds.slice(0, MAX_SEARCH_SOURCES) : [];
+    const sources = ids.map(id => questionById.get(id)).filter(Boolean);
+    if (!query || query.length > 300 || sources.length === 0) {
+      sendJson(res, 400, { error: 'query (höchstens 300 Zeichen) und questionIds sind erforderlich.' });
+      return;
+    }
+    sendJson(res, 200, await ai.answerSearch(query, sources));
+  }
+
+  async function writtenGrade(res, body) {
+    const exam = writtenById.get(body.examId);
+    const images = Array.isArray(body.images)
+      ? body.images.filter(img => img && /^image\/(jpeg|png)$/.test(img.mediaType) && typeof img.data === 'string' && /^[A-Za-z0-9+/=]+$/.test(img.data))
+      : [];
+    if (!exam || images.length === 0 || images.length > MAX_WRITTEN_PAGES) {
+      sendJson(res, 400, { error: `examId und 1 bis ${MAX_WRITTEN_PAGES} Antwortblätter sind erforderlich.` });
+      return;
+    }
+    sendJson(res, 200, await ai.gradeWritten(exam, images.map(img => ({ mediaType: img.mediaType, data: img.data }))));
+  }
+
   async function handleApi(req, res, pathname) {
     if (pathname === '/api/status' && req.method === 'GET') {
       sendJson(res, 200, { ai: Boolean(ai), model: ai ? MODEL : null, questions: data.questions.length });
@@ -151,16 +176,13 @@ function createAppServer(options) {
       return;
     }
 
+    if (pathname === '/api/search-answer') {
+      await searchAnswer(res, body);
+      return;
+    }
+
     if (pathname === '/api/written-grade') {
-      const exam = writtenById.get(body.examId);
-      const images = Array.isArray(body.images)
-        ? body.images.filter(img => img && /^image\/(jpeg|png)$/.test(img.mediaType) && typeof img.data === 'string' && /^[A-Za-z0-9+/=]+$/.test(img.data))
-        : [];
-      if (!exam || images.length === 0 || images.length > MAX_WRITTEN_PAGES) {
-        sendJson(res, 400, { error: `examId und 1 bis ${MAX_WRITTEN_PAGES} Antwortblätter sind erforderlich.` });
-        return;
-      }
-      sendJson(res, 200, await ai.gradeWritten(exam, images.map(img => ({ mediaType: img.mediaType, data: img.data }))));
+      await writtenGrade(res, body);
       return;
     }
 

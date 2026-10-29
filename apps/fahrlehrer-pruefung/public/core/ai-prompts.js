@@ -42,6 +42,20 @@
 
   const EXAMINER_FORMAT = 'Antworte ausschließlich mit einem JSON-Objekt dieser Form: {"message": string, "assessment": {"completed": boolean, "questionId": string, "score": 0.0-1.0, "missing": [string], "comment": string}, "finished": boolean, "summary": string}';
 
+  const SEARCH_SYSTEM = [
+    'Du beantwortest Suchanfragen in einer Lern-App für die Fahrlehrerprüfung (Fahrlehrerlaubnisklasse BE) in Deutschland.',
+    'Antworte AUSSCHLIESSLICH mit Informationen aus den mitgelieferten Auszügen (geprüfte Musterantworten der App). Nutze kein eigenes Wissen und ergänze keine Zahlen, Fristen, Paragrafen oder Beispiele, die nicht in den Auszügen stehen.',
+    'Beantworte die Frage direkt – so, wie ein Fachmann sie mündlich beantworten würde: 1–4 kurze Sätze oder eine kurze Aufzählung mit „– “, höchstens etwa 90 Wörter. Kein Markdown, keine Einleitung wie „Laut den Auszügen“. Wiederhole die Frage nicht.',
+    'Hat die Frage mehrere Teile (z. B. „wie lange … und für wen …“), beantworte jeden Teil.',
+    'laws: die einschlägigen Paragrafen, Anlagen oder Verkehrszeichen (z. B. „§ 2a StVG“), nur wenn sie in den Auszügen genannt sind; sonst leer.',
+    'sources: die IDs der Auszüge, auf die sich die Antwort stützt.',
+    'Beantworten die Auszüge die Frage nicht, setze found = false, answer = "", laws = [], sources = []. Widersprechen sich Auszüge, nimm die Angabe aus der ausführlicheren Musterantwort und erfinde nichts.'
+  ].join('\n');
+
+  const SEARCH_FORMAT = 'Antworte ausschließlich mit einem JSON-Objekt dieser Form: {"found": boolean, "answer": string, "laws": [string], "sources": [string]}';
+  const MAX_SEARCH_SOURCE_CHARS = 3000;
+  const MAX_SEARCH_QUERY_CHARS = 300;
+
   function clampText(text, max) {
     const value = String(text || '');
     return value.length > max ? value.slice(0, max) : value;
@@ -210,6 +224,40 @@
     return Array.isArray(list) ? list.map(item => String(item)).filter(Boolean) : [];
   }
 
+  /** Auszüge (beste Suchtreffer) und Suchanfrage für die Kurzantwort. */
+  function searchAnswerText(query, sources) {
+    const parts = sources.map(q => {
+      const official = (q.official || []).map(p => p.text).join(' ');
+      return [
+        `<auszug id="${q.id}">`,
+        `Frage: ${q.signLabel ? `${q.signLabel} – ${q.name}` : q.question}`,
+        `Musterantwort: ${clampText(q.modelAnswer, MAX_SEARCH_SOURCE_CHARS)}`,
+        official ? `Amtlicher Text (StVO): ${clampText(official, 1500)}` : null,
+        q.note ? `Hinweis: ${q.note}` : null,
+        '</auszug>'
+      ].filter(Boolean).join('\n');
+    });
+    return `${parts.join('\n\n')}\n\nSuchanfrage des Nutzers:\n<suchanfrage>${clampText(query, MAX_SEARCH_QUERY_CHARS)}</suchanfrage>`;
+  }
+
+  function searchAnswerPrompt(query, sources) {
+    return `${SEARCH_SYSTEM}\n\n${searchAnswerText(query, sources)}\n\n${SEARCH_FORMAT}`;
+  }
+
+  /** Nur Quellen-IDs aus den mitgeschickten Auszügen; ohne Antworttext gilt "nicht gefunden". */
+  function normalizeSearchAnswer(data, sourceIds) {
+    const d = data && typeof data === 'object' ? data : {};
+    const answer = String(d.answer || '').trim();
+    const allowed = new Set(sourceIds || []);
+    const found = Boolean(d.found) && answer.length > 0;
+    return {
+      found,
+      answer: found ? answer : '',
+      laws: found ? strings(d.laws).slice(0, 6) : [],
+      sources: found ? strings(d.sources).filter(id => allowed.has(id)) : []
+    };
+  }
+
   function normalizeEvaluation(data) {
     const d = data && typeof data === 'object' ? data : {};
     return {
@@ -254,6 +302,11 @@
     writtenExamText,
     writtenGradingPrompt,
     gradeLabel,
-    normalizeWrittenGrading
+    normalizeWrittenGrading,
+    SEARCH_SYSTEM,
+    SEARCH_FORMAT,
+    searchAnswerText,
+    searchAnswerPrompt,
+    normalizeSearchAnswer
   };
 });

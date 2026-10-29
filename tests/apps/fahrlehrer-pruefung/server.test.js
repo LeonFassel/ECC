@@ -169,7 +169,8 @@ async function runTests() {
   const service = {
     evaluate: async (q, answer) => ({ score: 0.5, covered: [], missing: [], errors: [], feedback: `${q.id}:${answer}`, tip: '' }),
     examine: async (qs, history) => ({ message: `${qs.length}/${history.length}`, assessment: null, finished: false, summary: '' }),
-    gradeWritten: async () => ({ parts: [] })
+    gradeWritten: async () => ({ parts: [] }),
+    answerSearch: async (query, sources) => ({ found: true, answer: `${query}:${sources.map(q => q.id).join(',')}`, laws: [], sources: [] })
   };
   const full = createAppServer({ aiService: service });
   const fullUrl = await listen(full);
@@ -179,6 +180,28 @@ async function runTests() {
     assert.strictEqual(bad.status, 400);
     const noImages = await post(fullUrl, '/api/written-grade', { examId: 'se-gibt-es-nicht', images: [{ mediaType: 'text/html', data: '<b>' }] });
     assert.strictEqual(noImages.status, 400);
+  }));
+
+  results.push(await test('search answer endpoint sends only known questions as sources', async () => {
+    const ok = await post(fullUrl, '/api/search-answer', { query: ' Wie lange? ', questionIds: [question.id, 'unknown'] });
+    assert.strictEqual(ok.status, 200);
+    assert.strictEqual((await ok.json()).answer, `Wie lange?:${question.id}`);
+    assert.strictEqual((await post(fullUrl, '/api/search-answer', { query: 'x', questionIds: ['unknown'] })).status, 400);
+    assert.strictEqual((await post(fullUrl, '/api/search-answer', { query: 'x'.repeat(301), questionIds: [question.id] })).status, 400);
+  }));
+
+  results.push(await test('search answer request: structured output, sources and query in the prompt', async () => {
+    const client = fakeClient(() => fakeResponse({ found: true, answer: 'Zwei Jahre.', laws: ['§ 2a StVG'], sources: [question.id, 'erfunden'] }));
+    const result = await ai.createAiService(client).answerSearch('Wie lange dauert die Probezeit?', [question]);
+    assert.deepStrictEqual(result, { found: true, answer: 'Zwei Jahre.', laws: ['§ 2a StVG'], sources: [question.id] });
+    const params = client.calls[0];
+    assert.strictEqual(params.output_config.format.type, 'json_schema');
+    assert.strictEqual(params.output_config.effort, 'low');
+    assert.ok(params.system.includes('AUSSCHLIESSLICH'));
+    assert.ok(params.messages[0].content.includes(`<auszug id="${question.id}">`));
+    assert.ok(params.messages[0].content.includes('<suchanfrage>Wie lange dauert die Probezeit?</suchanfrage>'));
+    const none = await ai.createAiService(fakeClient(() => fakeResponse({ found: true, answer: '  ', laws: ['§ 1'], sources: [question.id] }))).answerSearch('x', [question]);
+    assert.deepStrictEqual(none, { found: false, answer: '', laws: [], sources: [] });
   }));
 
   results.push(await test('evaluate endpoint validates input and forwards to the AI service', async () => {

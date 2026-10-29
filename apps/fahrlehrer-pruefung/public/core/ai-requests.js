@@ -92,6 +92,18 @@
     additionalProperties: false
   };
 
+  const SEARCH_SCHEMA = {
+    type: 'object',
+    properties: {
+      found: { type: 'boolean' },
+      answer: { type: 'string' },
+      laws: { type: 'array', items: { type: 'string' } },
+      sources: { type: 'array', items: { type: 'string' } }
+    },
+    required: ['found', 'answer', 'laws', 'sources'],
+    additionalProperties: false
+  };
+
   function baseParams(model) {
     return {
       model: model || DEFAULT_MODEL,
@@ -147,6 +159,18 @@
     });
   }
 
+  /** Kurzantwort der Suche: nur aus den mitgeschickten Musterantworten (sources = Fragen der App). */
+  function buildSearchAnswerRequest(query, sources, model) {
+    return Object.assign(baseParams(model), {
+      system: Prompts.SEARCH_SYSTEM,
+      output_config: {
+        effort: 'low',
+        format: { type: 'json_schema', schema: SEARCH_SCHEMA }
+      },
+      messages: [{ role: 'user', content: Prompts.searchAnswerText(query, sources) }]
+    });
+  }
+
   class AiResponseError extends Error {
     constructor(message, code) {
       super(message);
@@ -188,6 +212,11 @@
         return Prompts.normalizeExaminerTurn(parseStructured(response));
       },
 
+      async answerSearch(query, sources) {
+        const response = await client.beta.messages.create(buildSearchAnswerRequest(query, sources, model));
+        return Prompts.normalizeSearchAnswer(parseStructured(response), sources.map(q => q.id));
+      },
+
       async gradeWritten(exam, images) {
         const response = await client.beta.messages.create(buildWrittenGradingRequest(exam, images, model));
         return Object.assign(Prompts.normalizeWrittenGrading(parseStructured(response), exam), { model: response.model });
@@ -200,10 +229,12 @@
     EVALUATION_SCHEMA,
     EXAMINER_SCHEMA,
     WRITTEN_SCHEMA,
+    SEARCH_SCHEMA,
     AiResponseError,
     buildEvaluationRequest,
     buildExaminerRequest,
     buildWrittenGradingRequest,
+    buildSearchAnswerRequest,
     parseStructured,
     createAiService
   };

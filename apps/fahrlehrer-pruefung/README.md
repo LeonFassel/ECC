@@ -8,7 +8,7 @@ braucht es kein Framework, keinen Build-Schritt und keine externen Abhängigkeit
 
 | Bereich | Was die App bietet |
 | --- | --- |
-| Suche | Suchleiste oben auf jeder Seite: Frage oder Begriff eingeben (z. B. „Wie lang darf eine Fahrzeugkombination sein?“, „Probezeit“, „Zeichen 205“) – die passende Musterantwort erscheint sofort mit Hervorhebung und den genannten Paragrafen, darunter weitere Treffer aus allen Fächern, Karteikarten und Verkehrszeichen |
+| Suche | Suchleiste oben auf jeder Seite (X löscht die Eingabe): Frage oder Begriff eingeben (z. B. „Wie lange dauert die Probezeit und für wen gilt sie?“, „Stützlast“, „Zeichen 205“). Oben steht die direkte Antwort – mit KI von Claude ausschließlich aus den Musterantworten der App formuliert, ohne KI die passendsten Stellen der besten Antwort – mit den genannten Paragrafen; darunter alle Treffer aus Fächern, Karteikarten und Verkehrszeichen |
 | Übersicht | Lernfortschritt, Wissensstand und Prüfungsreife getrennt, Tagesziel, Lernserie, Fortschrittsbalken pro Fach |
 | Fächer | Verkehrszeichen, Pädagogik, Recht, Technik, Verkehrsverhalten, Berufspraxis – insgesamt 171 Fragen, darunter 38 mündliche Prüfungsfragen (Verkehrsverhalten/Recht) und gut 40 Technikfragen |
 | Mündliche Fragensammlung | Fragen aus der „Sammlung von mündlichen Prüfungsfragen“ (Stand Januar 2023) mit recherchierten Musterantworten – im passenden Fach (Knopf „Mündliche Sammlung“) und als Karteikarte im passenden Stapel; Fragen, die schon in der App stehen, sind nicht doppelt aufgenommen (im Repository nur Platzhalter) |

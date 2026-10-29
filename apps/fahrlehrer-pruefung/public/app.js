@@ -29,6 +29,8 @@
   let searchIndex = null;
   let searchTimer = 0;
   let lastSearch = '';
+  let searchAiTimer = 0;
+  const searchAnswers = new Map();
   const searchInput = document.getElementById('topsearch-input');
 
   // ------------------------------------------------------------------ Speicher
@@ -251,6 +253,22 @@
     }
     try {
       return Prompts.normalizeEvaluation(await sampleFn.json(Prompts.evaluationPrompt(question, answer)));
+    } catch (err) {
+      throw new Error(sampleErrorMessage(err));
+    }
+  }
+
+  async function aiSearchAnswer(query, sources) {
+    if (aiStatus.mode === 'server') return postJson('api/search-answer', { query, questionIds: sources.map(q => q.id) });
+    if (aiStatus.mode === 'apikey') {
+      try {
+        return await apiService.answerSearch(query, sources);
+      } catch (err) {
+        throw new Error(apiErrorMessage(err));
+      }
+    }
+    try {
+      return await sampleFn.json(Prompts.searchAnswerPrompt(query, sources));
     } catch (err) {
       throw new Error(sampleErrorMessage(err));
     }
@@ -630,6 +648,9 @@
     };
     if (immediate) apply();
     else searchTimer = window.setTimeout(apply, 160);
+    // Claude erst fragen, wenn die Eingabe steht (Enter oder kurze Tipp-Pause).
+    window.clearTimeout(searchAiTimer);
+    if (query.trim().length >= 3) searchAiTimer = window.setTimeout(() => requestSearchAnswer(query.trim()), immediate ? 0 : 1500);
   }
 
   function marked(text, terms) {
@@ -657,28 +678,83 @@
         <div class="btn-row">${SEARCH_EXAMPLES.map(e => `<a class="btn small-btn" href="#/suche/${esc(encodeURIComponent(e))}">${esc(e)}</a>`).join('')}</div></div>`;
     }
     lastSearch = query;
+    // Über einen Link oder "Zurück" geöffnet (nicht beim Tippen): Kurzantwort gleich anfragen.
+    if (aiStatus.ai && !searchAnswers.has(searchKey(query)) && document.activeElement !== searchInput) {
+      window.setTimeout(() => requestSearchAnswer(query.trim()), 0);
+    }
     const found = Search.search(getSearchIndex(), query, 30);
     if (!found.results.length) {
       return `${head}<div class="card empty"><p>Keine Treffer für „${esc(query)}“.</p><p class="small muted">Tipp: ein einzelnes Fachwort versuchen (z. B. „Anhängelast“ statt eines ganzen Satzes).</p></div>`;
     }
-    const [top, ...rest] = found.results;
-    return `${head}${searchAnswerBox(top, found.terms)}
-      ${rest.length ? `<div class="section-title"><h2>Weitere Treffer</h2><span class="small muted">${found.total} insgesamt${found.total > found.results.length ? `, die besten ${found.results.length} angezeigt` : ''}</span></div>
-      <div class="card"><ul class="list search-results">${rest.map(hit => searchResultItem(hit, found.terms)).join('')}</ul></div>` : ''}`;
+    return `${head}${searchAnswerBox(query, found)}
+      <div class="section-title"><h2>Treffer</h2><span class="small muted">${found.total} insgesamt${found.total > found.results.length ? `, die besten ${found.results.length} angezeigt` : ''}</span></div>
+      <div class="card"><ul class="list search-results">${found.results.map(hit => searchResultItem(hit, found.terms)).join('')}</ul></div>`;
   }
 
-  function searchAnswerBox(hit, terms) {
-    const q = hit.question;
-    const lines = Search.answerLines(q.modelAnswer || (q.official || []).map(p => p.text).join('\n'), terms, 3);
-    const shown = lines.length ? lines : [hit.snippet];
+  // Antwort oben: direkt auf die Frage – von Claude aus den besten Musterantworten
+  // formuliert, sonst (oder bis dahin) die passendsten Stellen der besten Antwort.
+  function searchAnswerBox(query, found) {
+    const entry = searchAnswers.get(searchKey(query));
+    if (entry && entry.status === 'done' && entry.data.found) return aiAnswerBox(entry.data, found.terms);
+    const top = found.results[0];
+    const q = top.question;
+    const lines = Search.answerLines(q.modelAnswer || (q.official || []).map(p => p.text).join('\n'), found.terms, 3);
+    const shown = lines.length ? lines : [top.snippet];
+    let status = '';
+    if (entry && entry.status === 'loading') status = '<p class="small muted search-ai-status"><span class="spinner" aria-hidden="true"></span> Claude formuliert die Antwort aus den Musterantworten …</p>';
+    else if (entry && entry.status === 'error') status = `<p class="small muted search-ai-status">${esc(entry.error)}</p>`;
+    else if (entry && entry.status === 'done') status = '<p class="small muted search-ai-status">Eine direkte Antwort steht so nicht in den Musterantworten – das sind die passendsten Stellen:</p>';
     return `<div class="card search-answer">
-      <div class="search-answer-head"><span class="chip">${esc(resultSource(q))}</span>${hit.complete ? '' : '<span class="chip mittel">passt teilweise</span>'}</div>
+      <div class="search-answer-head"><span class="kpi-label">Antwort</span></div>
       ${isSignCard(q) ? `<div class="sign-stage small-sign">${signImages(q, q.signLabel || 'Verkehrszeichen')}</div>` : ''}
-      <h2 class="search-answer-q">${marked(q.signLabel ? `${q.signLabel} – ${q.name}` : q.question, terms)}</h2>
-      <div class="search-answer-text">${shown.map(line => `<p>${marked(line, terms)}</p>`).join('')}</div>
-      ${lawChips(hit.laws)}
-      <div class="btn-row"><a class="btn primary" href="#/antwort/${esc(q.id)}">Ganze Antwort anzeigen</a><a class="btn" href="#/frage/${esc(q.id)}">Frage üben</a></div>
+      <div class="search-answer-text">${shown.map(line => `<p>${marked(line, found.terms)}</p>`).join('')}</div>
+      ${lawChips(top.laws)}
+      ${status}
+      <p class="small muted search-from">Aus: <a href="#/antwort/${esc(q.id)}">${esc(shortTitle(q))}</a></p>
     </div>`;
+  }
+
+  function aiAnswerBox(data, terms) {
+    const from = data.sources.map(id => questionById.get(id)).filter(Boolean);
+    return `<div class="card search-answer">
+      <div class="search-answer-head"><span class="kpi-label">Antwort</span></div>
+      <p class="search-direct pre-line">${marked(data.answer, terms)}</p>
+      ${lawChips(data.laws)}
+      <p class="small muted search-from">Von Claude aus den Musterantworten der App zusammengefasst${from.length ? `: ${from.map(q => `<a href="#/antwort/${esc(q.id)}">${esc(shortTitle(q))}</a>`).join(' · ')}` : ''}</p>
+    </div>`;
+  }
+
+  function shortTitle(q) {
+    const title = q.signLabel ? `${q.signLabel} – ${q.name}` : q.question.replace(/\s*\n+\s*/g, ' ');
+    return title.length > 90 ? `${title.slice(0, 87)} …` : title;
+  }
+
+  function searchKey(query) {
+    return Search.normalize(query);
+  }
+
+  /** Kurzantwort bei Claude anfragen (einmal je Suche; Ergebnis bleibt im Speicher). */
+  async function requestSearchAnswer(query) {
+    const key = searchKey(query);
+    if (!aiStatus.ai || !key || searchAnswers.has(key)) return;
+    const found = Search.search(getSearchIndex(), query, 5);
+    if (!found.results.length) return;
+    const sources = found.results.map(hit => hit.question);
+    searchAnswers.set(key, { status: 'loading' });
+    rerenderSearch(key);
+    try {
+      const data = await aiSearchAnswer(query, sources);
+      searchAnswers.set(key, { status: 'done', data: Prompts.normalizeSearchAnswer(data, sources.map(q => q.id)) });
+    } catch (err) {
+      searchAnswers.set(key, { status: 'error', error: err.message || 'Die KI ist gerade nicht erreichbar.' });
+    }
+    rerenderSearch(key);
+  }
+
+  // Nur neu zeichnen, wenn die Suche noch angezeigt wird.
+  function rerenderSearch(key) {
+    const r = route();
+    if (r.name === 'suche' && searchKey(r.param || '') === key) render();
   }
 
   function searchResultItem(hit, terms) {
@@ -2056,7 +2132,14 @@
 
   if (searchInput) {
     const form = document.getElementById('topsearch');
+    const clear = document.getElementById('topsearch-clear');
     searchInput.addEventListener('input', () => runSearch(searchInput.value, false));
+    // X rechts im Suchfeld: alles auf einmal löschen.
+    clear.addEventListener('click', () => {
+      searchInput.value = '';
+      runSearch('', true);
+      searchInput.focus();
+    });
     form.addEventListener('submit', event => {
       event.preventDefault();
       runSearch(searchInput.value, true);

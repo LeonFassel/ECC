@@ -21,7 +21,7 @@
     'euch fuer gibt gilt habe haben hat hier ich ihm ihn ihr ihre im immer in ins ist ja jede jeder jedes kann kein ' +
     'keine koennen man mehr mein mich mir mit muss muessen nach nein nennen nicht noch nur ob oder ohne sein seine ' +
     'sich sie sind so soll sollen sowie ueber um und uns unter viel vom von vor wann war warum was weil welche ' +
-    'welchem welchen welcher welches wenn wer werden wie wieso wieviel wir wird wo wodurch womit worauf zu zum zur ' +
+    'welchem welchen welcher welches wem wen wenn wer werden wessen wie wieso wieviel wir wird wo wodurch womit worauf zu zum zur ' +
     'zwischen sagen sage beschreiben bedeutet bedeutung'
   ).split(/\s+/));
 
