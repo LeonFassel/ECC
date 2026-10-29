@@ -23,7 +23,13 @@
       <a href="#/analyse" data-nav="analyse"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span>Analyse</span></a>
       <a href="#/einstellungen" data-nav="einstellungen" class="nav-settings"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg><span>Einstellungen</span></a>
     </nav>
-    <main id="app" class="main" tabindex="-1" aria-live="polite"></main>
+    <main class="main">
+      <form class="topsearch" id="topsearch" role="search" autocomplete="off">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+        <input type="search" id="topsearch-input" enterkeyhint="search" placeholder="Frage oder Begriff suchen …" aria-label="Alle Fragen und Antworten durchsuchen">
+      </form>
+      <div id="app" tabindex="-1" aria-live="polite"></div>
+    </main>
   </div>
   <script src="data/questions-muendlich.js"></script>
   <script src="data/questions-technik.js"></script>
@@ -40,6 +46,7 @@
   <script src="core/ai-requests.js"></script>
   <script src="core/written-exam.js"></script>
   <script src="core/games-core.js"></script>
+  <script src="core/search-core.js"></script>
   <script src="ink.js"></script>
   <script src="written-ui.js"></script>
   <script src="games.js"></script>

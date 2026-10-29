@@ -8,6 +8,7 @@ braucht es kein Framework, keinen Build-Schritt und keine externen Abhängigkeit
 
 | Bereich | Was die App bietet |
 | --- | --- |
+| Suche | Suchleiste oben auf jeder Seite: Frage oder Begriff eingeben (z. B. „Wie lang darf eine Fahrzeugkombination sein?“, „Probezeit“, „Zeichen 205“) – die passende Musterantwort erscheint sofort mit Hervorhebung und den genannten Paragrafen, darunter weitere Treffer aus allen Fächern, Karteikarten und Verkehrszeichen |
 | Übersicht | Lernfortschritt, Wissensstand und Prüfungsreife getrennt, Tagesziel, Lernserie, Fortschrittsbalken pro Fach |
 | Fächer | Verkehrszeichen, Pädagogik, Recht, Technik, Verkehrsverhalten, Berufspraxis – insgesamt 171 Fragen, darunter 38 mündliche Prüfungsfragen (Verkehrsverhalten/Recht) und gut 40 Technikfragen |
 | Mündliche Fragensammlung | Fragen aus der „Sammlung von mündlichen Prüfungsfragen“ (Stand Januar 2023) mit recherchierten Musterantworten – im passenden Fach (Knopf „Mündliche Sammlung“) und als Karteikarte im passenden Stapel; Fragen, die schon in der App stehen, sind nicht doppelt aufgenommen (im Repository nur Platzhalter) |
@@ -192,6 +193,7 @@ apps/fahrlehrer-pruefung/
   public/ink.js                 Zeichenfläche für Apple Pencil, Finger und Maus
   public/written-ui.js          Schriftliche Prüfung: Auswahl und Arbeitsplatz
   public/core/games-core.js     Lernspiele: Runden, Aussagen, Paare, Sterne (ohne DOM, getestet)
+  public/core/search-core.js    Suche über alle Fragen und Antworten: Wortstämme, Paragrafen (ohne DOM, getestet)
   public/games.js               Lernspiele: Spielecke und Spiele
   public/data/questions.js      Fächer, Grundfragen und Zusammenführung aller Fragen
   public/data/questions-muendlich.js  Mündliche Prüfungsfragen Verkehrsverhalten/Recht

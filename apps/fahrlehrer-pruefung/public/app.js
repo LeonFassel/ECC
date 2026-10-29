@@ -7,6 +7,7 @@
   const Requests = window.FLAiRequests;
   const WrittenUI = window.FLWrittenUI;
   const Games = window.FLGames;
+  const Search = window.FLSearch;
   const { subjects, questions, signs } = window.FLData;
   const decks = window.FLData.decks || [];
   const STORAGE_KEY = 'fl-pruefung-state-v1';
@@ -25,6 +26,10 @@
   let currentHash = window.location.hash;
   let pendingConfirm = null;
   let backupCode = null;
+  let searchIndex = null;
+  let searchTimer = 0;
+  let lastSearch = '';
+  const searchInput = document.getElementById('topsearch-input');
 
   // ------------------------------------------------------------------ Speicher
 
@@ -577,8 +582,11 @@
       archivansicht: () => WrittenUI.renderViewer(r.param),
       spiel: () => Games.render(r.param),
       analyse: renderAnalysis,
-      einstellungen: renderSettings
+      einstellungen: renderSettings,
+      suche: () => renderSearch(r.param || ''),
+      antwort: () => renderAnswerPage(r.param)
     };
+    syncSearchInput(r);
     pendingConfirm = null;
     if (key !== lastRoute && dictation) stopDictation();
     app.innerHTML = (views[r.name] || renderDashboard)();
@@ -588,6 +596,126 @@
       window.scrollTo(0, 0);
       lastRoute = key;
     }
+  }
+
+  // ------------------------------------------------------------------ Suche
+
+  function getSearchIndex() {
+    if (!searchIndex) searchIndex = Search.createIndex(window.FLData);
+    return searchIndex;
+  }
+
+  // Suchfeld oben: zeigt die aktuelle Suche, außerhalb der Suche bleibt es leer.
+  function syncSearchInput(r) {
+    if (!searchInput || document.activeElement === searchInput) return;
+    searchInput.value = r.name === 'suche' ? r.param || '' : '';
+  }
+
+  /** Ergebnisse beim Tippen aktualisieren (der Verlauf bekommt nur einen Eintrag je Suche). */
+  function runSearch(query, immediate) {
+    window.clearTimeout(searchTimer);
+    const apply = () => {
+      const hash = `#/suche/${encodeURIComponent(query.trim())}`;
+      if (route().name === 'suche') {
+        currentHash = hash;
+        try {
+          window.history.replaceState(null, '', hash);
+        } catch (_err) {
+          // Adresszeile nicht beschreibbar – die Suche läuft trotzdem.
+        }
+        render();
+      } else if (query.trim()) {
+        go(hash);
+      }
+    };
+    if (immediate) apply();
+    else searchTimer = window.setTimeout(apply, 160);
+  }
+
+  function marked(text, terms) {
+    return Search.highlight(text, terms).map(part => (part.mark ? `<mark>${esc(part.text)}</mark>` : esc(part.text))).join('');
+  }
+
+  function lawChips(laws) {
+    return laws.length ? `<div class="law-chips">${laws.map(l => `<span class="chip law">${esc(l)}</span>`).join('')}</div>` : '';
+  }
+
+  function resultSource(q) {
+    if (q.signLabel) return q.signLabel;
+    if (q.collection === 'karteikarten') return `Karteikarte ${q.deckName || ''}`.trim();
+    const subject = subjectById.get(q.subject);
+    return subject ? subject.name : '';
+  }
+
+  const SEARCH_EXAMPLES = ['Wie lang darf eine Fahrzeugkombination sein?', 'Probezeit', 'Stützlast', 'Vier-Ohren-Modell', 'Zeichen 205', 'Lernzielbereiche', 'Aquaplaning', 'Begleitetes Fahren ab 17'];
+
+  function renderSearch(query) {
+    const head = `<header class="page-head"><h1>Suche</h1>
+      <p>Alle Fächer, Karteikarten, Fragensammlungen und Verkehrszeichen – die Antworten stammen aus den Musterantworten der App.</p></header>`;
+    if (!query.trim()) {
+      return `${head}<div class="card"><p class="muted">Geben Sie oben einen Begriff oder eine Frage ein. Beispiele:</p>
+        <div class="btn-row">${SEARCH_EXAMPLES.map(e => `<a class="btn small-btn" href="#/suche/${esc(encodeURIComponent(e))}">${esc(e)}</a>`).join('')}</div></div>`;
+    }
+    lastSearch = query;
+    const found = Search.search(getSearchIndex(), query, 30);
+    if (!found.results.length) {
+      return `${head}<div class="card empty"><p>Keine Treffer für „${esc(query)}“.</p><p class="small muted">Tipp: ein einzelnes Fachwort versuchen (z. B. „Anhängelast“ statt eines ganzen Satzes).</p></div>`;
+    }
+    const [top, ...rest] = found.results;
+    return `${head}${searchAnswerBox(top, found.terms)}
+      ${rest.length ? `<div class="section-title"><h2>Weitere Treffer</h2><span class="small muted">${found.total} insgesamt${found.total > found.results.length ? `, die besten ${found.results.length} angezeigt` : ''}</span></div>
+      <div class="card"><ul class="list search-results">${rest.map(hit => searchResultItem(hit, found.terms)).join('')}</ul></div>` : ''}`;
+  }
+
+  function searchAnswerBox(hit, terms) {
+    const q = hit.question;
+    const lines = Search.answerLines(q.modelAnswer || (q.official || []).map(p => p.text).join('\n'), terms, 3);
+    const shown = lines.length ? lines : [hit.snippet];
+    return `<div class="card search-answer">
+      <div class="search-answer-head"><span class="chip">${esc(resultSource(q))}</span>${hit.complete ? '' : '<span class="chip mittel">passt teilweise</span>'}</div>
+      ${isSignCard(q) ? `<div class="sign-stage small-sign">${signImages(q, q.signLabel || 'Verkehrszeichen')}</div>` : ''}
+      <h2 class="search-answer-q">${marked(q.signLabel ? `${q.signLabel} – ${q.name}` : q.question, terms)}</h2>
+      <div class="search-answer-text">${shown.map(line => `<p>${marked(line, terms)}</p>`).join('')}</div>
+      ${lawChips(hit.laws)}
+      <div class="btn-row"><a class="btn primary" href="#/antwort/${esc(q.id)}">Ganze Antwort anzeigen</a><a class="btn" href="#/frage/${esc(q.id)}">Frage üben</a></div>
+    </div>`;
+  }
+
+  function searchResultItem(hit, terms) {
+    const q = hit.question;
+    const title = q.signLabel ? `${q.signLabel} – ${q.name}` : q.question.replace(/\s*\n+\s*/g, ' ');
+    const short = title.length > 170 ? `${title.slice(0, 167)} …` : title;
+    return `<li><div class="search-hit">
+      <a href="#/antwort/${esc(q.id)}">${marked(short, terms)}</a>
+      <div class="small muted"><span class="chip">${esc(resultSource(q))}</span> ${marked(hit.snippet, terms)}</div>
+      ${lawChips(hit.laws.slice(0, 3))}
+    </div></li>`;
+  }
+
+  /** Frage mit vollständiger Antwort zum Nachlesen (aus der Suche). */
+  function renderAnswerPage(id) {
+    const q = questionById.get(id);
+    if (!q) return '<div class="card empty">Frage nicht gefunden.</div>';
+    const back = `#/suche/${encodeURIComponent(lastSearch.trim())}`;
+    return `
+      <header class="page-head">
+        <div class="page-head-nav"><a class="back-arrow" href="${esc(back)}" aria-label="Zurück zur Suche" title="Zurück zur Suche"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></a><span class="small">${esc(resultSource(q))}${q.topic && !q.signLabel ? ` · ${esc(q.topic)}` : ''}</span></div>
+      </header>
+      <div class="card section">
+        ${questionStage(q)}
+        <p class="question-text${q.question.length > 160 ? ' long' : ''}">${esc(q.signLabel ? `${q.signLabel} – ${q.name}` : q.question)}</p>
+        ${renderOfficialText(q)}
+        ${q.explanation ? `<div class="panel info"><h3>Einfach erklärt</h3><p>${esc(q.explanation)}</p></div>` : ''}
+        ${q.example ? `<div class="panel"><h3>Praxisbeispiel</h3><p>${esc(q.example)}</p></div>` : ''}
+        ${q.note ? `<div class="panel warn"><h3>Hinweis</h3><p>${esc(q.note)}</p></div>` : ''}
+        <details class="disclosure" open><summary>${q.collection === 'karteikarten' && !q.cardLabel ? 'Antwort (Rückseite der Karte)' : 'Musterantwort'}</summary><p class="pre-line">${esc(q.modelAnswer)}</p>
+          ${cardFigureStage(q.answerFigures)}
+          ${q.keyPoints && q.keyPoints.length ? `<p class="small muted">Kernpunkte: ${q.keyPoints.map(p => esc(p.label)).join(' · ')}</p>` : ''}
+          ${q.source ? `<p class="small muted">Quelle der Frage: ${esc(q.source)}</p>` : ''}
+          ${renderAnswerSources(q)}</details>
+        ${lawChips(Search.lawReferences(`${q.modelAnswer || ''}\n${(q.official || []).map(p => p.text).join(' ')}`))}
+        <div class="btn-row" style="margin-top:14px"><a class="btn primary" href="#/frage/${esc(q.id)}">Diese Frage üben</a></div>
+      </div>`;
   }
 
   // ------------------------------------------------------------------ Übersicht
@@ -1925,6 +2053,31 @@
     if (event.target.dataset.input === 'answer') stopDictation(() => submitAnswer(false));
     if (event.target.dataset.input === 'exam-answer' && !exam.loading) stopDictation(sendExamAnswer);
   });
+
+  if (searchInput) {
+    const form = document.getElementById('topsearch');
+    searchInput.addEventListener('input', () => runSearch(searchInput.value, false));
+    form.addEventListener('submit', event => {
+      event.preventDefault();
+      runSearch(searchInput.value, true);
+      // Auf dem Handy die Tastatur schließen, damit die Antwort sichtbar ist.
+      if (window.matchMedia('(pointer: coarse)').matches) searchInput.blur();
+    });
+    searchInput.addEventListener('keydown', event => {
+      if (event.key === 'Escape') {
+        searchInput.value = '';
+        runSearch('', true);
+      }
+    });
+    // "/" springt ins Suchfeld (außer beim Schreiben in einem anderen Feld).
+    document.addEventListener('keydown', event => {
+      if (event.key !== '/' || event.ctrlKey || event.metaKey || event.altKey) return;
+      const tag = (event.target.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || event.target.isContentEditable) return;
+      event.preventDefault();
+      searchInput.focus();
+    });
+  }
 
   const syncFromLocation = () => {
     currentHash = window.location.hash;
