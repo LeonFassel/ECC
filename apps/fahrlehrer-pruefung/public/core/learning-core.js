@@ -700,6 +700,64 @@
     };
   }
 
+  const ORAL_GAP_MS = 30 * 60000;
+
+  /**
+   * Frühere mündliche Prüfungen aus den gespeicherten Einzelergebnissen (source "exam")
+   * zurückgewinnen. Eine neue Prüfung beginnt nach mehr als 30 Minuten Pause oder wenn
+   * wieder ein früherer Prüfer fragt (Reihenfolge Rechtler, Pädagoge, Techniker).
+   * Die Antworten werden nach Prüfer sortiert, auch wenn sie gemischt gefragt wurden.
+   * panelOf(questionId) liefert den Prüfer; covered: Zeiträume [von, bis] bereits
+   * archivierter Prüfungen – deren Ergebnisse werden nicht doppelt gezählt.
+   */
+  function reconstructOralExams(attempts, panelOf, covered, gapMs) {
+    const gap = gapMs || ORAL_GAP_MS;
+    const ranges = covered || [];
+    const order = new Map(EXAM_PANEL.map((p, i) => [p.id, i]));
+    const items = [];
+    Object.keys(attempts || {}).forEach(questionId => {
+      const panel = panelOf(questionId);
+      if (!order.has(panel)) return;
+      (attempts[questionId] || []).forEach(a => {
+        if (a && a.source === 'exam' && typeof a.ts === 'number' && !ranges.some(r => a.ts >= r[0] && a.ts <= r[1])) {
+          items.push({ questionId, panel, ts: a.ts, score: Number(a.score) || 0, missing: Array.isArray(a.missed) ? a.missed : [] });
+        }
+      });
+    });
+    items.sort((a, b) => a.ts - b.ts);
+    const byTime = [];
+    items.forEach((item, i) => {
+      if (i === 0 || item.ts - items[i - 1].ts > gap) byTime.push([]);
+      byTime[byTime.length - 1].push(item);
+    });
+    // Ältere Prüfungen fragten die Fächer gemischt – dann nur trennen, wenn jedes
+    // Stück eine echte Prüfung sein kann (mindestens drei Antworten).
+    const groups = byTime.flatMap(group => {
+      const parts = [[]];
+      group.forEach((item, i) => {
+        if (i > 0 && order.get(item.panel) < order.get(group[i - 1].panel)) parts.push([]);
+        parts[parts.length - 1].push(item);
+      });
+      return parts.every(part => part.length >= 3) ? parts : [group];
+    });
+    return groups.map(group => ({
+      id: `rek-${group[0].ts.toString(36)}`,
+      reconstructed: true,
+      at: group[group.length - 1].ts,
+      from: group[0].ts,
+      to: group[group.length - 1].ts,
+      sections: EXAM_PANEL.map(p => {
+        const own = group.filter(item => item.panel === p.id);
+        return Object.assign({}, p, {
+          startedAt: own.length ? own[0].ts : 0,
+          endedAt: own.length ? own[own.length - 1].ts : 0,
+          summary: '',
+          results: own.map(item => ({ questionId: item.questionId, score: item.score, missing: item.missing, comment: '' }))
+        });
+      })
+    }));
+  }
+
   // ------------------------------------------------------------------ Teilfragen
 
   const LETTERS = 'abcdefgh';
@@ -824,6 +882,7 @@
     buildExamPanel,
     gradeFromScore,
     oralExamGrades,
+    reconstructOralExams,
     splitQuestionParts,
     examinerFollowUp,
     evaluateExamAnswers,

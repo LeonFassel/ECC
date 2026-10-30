@@ -413,6 +413,45 @@ function runTests() {
     assert.strictEqual(good.passed, true);
   }));
 
+  results.push(test('earlier oral exams are rebuilt from exam attempts', () => {
+    const min = 60000;
+    const t0 = Date.UTC(2026, 9, 1, 10, 0);
+    const panel = { r1: 'recht', r2: 'recht', p1: 'paedagogik', t1: 'technik', t2: 'technik', k1: null };
+    const at = (m, score, source) => ({ ts: t0 + m * min, score, source: source || 'exam', missed: [] });
+    const attempts = {
+      // Prüfung 1: Recht, Pädagogik, Technik in Reihenfolge.
+      r1: [at(1, 0.9), at(200, 0.5)],
+      r2: [at(3, 0.8), at(50, 1, 'self')],
+      p1: [at(12, 0.6)],
+      t1: [at(22, 0.4)],
+      // Prüfung 2 beginnt nach 3 Stunden; Karteikarten und Übungen zählen nicht.
+      t2: [at(210, 1)],
+      k1: [at(205, 1)]
+    };
+    const exams = Core.reconstructOralExams(attempts, id => panel[id]);
+    assert.strictEqual(exams.length, 2);
+    const [first, second] = exams;
+    assert.ok(first.reconstructed && first.id.startsWith('rek-'));
+    assert.deepStrictEqual(first.sections.map(s => s.results.map(r => r.questionId)), [['r1', 'r2'], ['p1'], ['t1']]);
+    const g = Core.oralExamGrades(first.sections);
+    assert.deepStrictEqual(g.parts.map(p => p.grade), [2, 4, 5]);
+    assert.strictEqual(g.average, 3.7);
+    assert.deepStrictEqual(second.sections.map(s => s.results.length), [1, 0, 1]);
+    assert.strictEqual(Core.oralExamGrades(second.sections).complete, false, 'Pädagogik ohne Ergebnis');
+
+    // Bereits archivierte Zeiträume werden nicht doppelt rekonstruiert.
+    assert.strictEqual(Core.reconstructOralExams(attempts, id => panel[id], [[t0, t0 + 30 * min]]).length, 1);
+
+    // Zwei Prüfungen direkt hintereinander: Der Rechtler fängt wieder an.
+    const back = { r1: [at(0, 1), at(25, 1)], r2: [at(2, 1), at(27, 1)], p1: [at(10, 1), at(35, 1)], t1: [at(20, 1), at(45, 1)] };
+    assert.strictEqual(Core.reconstructOralExams(back, id => panel[id]).length, 2);
+    // Ältere Prüfung mit gemischten Fächern bleibt eine Prüfung.
+    const mixed = { t1: [at(0, 1)], r1: [at(3, 1)], p1: [at(6, 1)], r2: [at(9, 1)] };
+    const one = Core.reconstructOralExams(mixed, id => panel[id]);
+    assert.strictEqual(one.length, 1);
+    assert.deepStrictEqual(one[0].sections.map(s => s.results.length), [2, 1, 1]);
+  }));
+
   results.push(test('multi-part questions are asked one part at a time', () => {
     assert.deepStrictEqual(Core.splitQuestionParts('Was ist Aquaplaning?'), ['Was ist Aquaplaning?']);
     assert.deepStrictEqual(Core.splitQuestionParts('Einleitung.\na) Erste Frage?\nb) Zweite Frage?\nmit Zusatz'),

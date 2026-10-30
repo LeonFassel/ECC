@@ -11,11 +11,14 @@
   const { subjects, questions, signs } = window.FLData;
   const decks = window.FLData.decks || [];
   const STORAGE_KEY = 'fl-pruefung-state-v1';
+  const ORAL_STORE = 'fl-oral-v1';
+  const ORAL_LIMIT = 40;
   const questionById = new Map(questions.map(q => [q.id, q]));
   const subjectById = new Map(subjects.map(s => [s.id, s]));
   const app = document.getElementById('app');
 
   let state = loadState();
+  const oral = loadOral();
   let aiStatus = { ai: false, mode: null, model: null };
   let sampleFn = null;
   let apiService = null;
@@ -49,6 +52,37 @@
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     } catch (_err) {
       toast('Fortschritt konnte nicht gespeichert werden (privater Modus?).');
+    }
+  }
+
+  // Archiv der mündlichen Prüfungen: abgeschlossene Prüfungen samt Gesprächsverlauf;
+  // hidden: gelöschte rekonstruierte Prüfungen (die Einzelergebnisse bleiben im Lernstand).
+  function loadOral() {
+    try {
+      const raw = JSON.parse(window.localStorage.getItem(ORAL_STORE) || 'null') || {};
+      return {
+        exams: Array.isArray(raw.exams) ? raw.exams.filter(e => e && typeof e.id === 'string' && Array.isArray(e.sections)) : [],
+        hidden: Array.isArray(raw.hidden) ? raw.hidden.filter(id => typeof id === 'string') : []
+      };
+    } catch (_err) {
+      return { exams: [], hidden: [] };
+    }
+  }
+
+  /** Speichern; wird der Platz knapp, fallen zuerst alte Gesprächsverläufe weg (Noten bleiben). */
+  function saveOral() {
+    for (;;) {
+      try {
+        window.localStorage.setItem(ORAL_STORE, JSON.stringify(oral));
+        return;
+      } catch (_err) {
+        const old = oral.exams.find(e => e.transcript && e.transcript.length);
+        if (!old) {
+          toast('Das Prüfungsarchiv konnte nicht gespeichert werden (privater Modus?).');
+          return;
+        }
+        old.transcript = [];
+      }
     }
   }
 
@@ -622,7 +656,7 @@
     document.querySelectorAll('[data-nav]').forEach(a => {
       const active = a.dataset.nav === r.name
         || (a.dataset.nav === 'faecher' && ['fach', 'sammlung', 'stapel', 'spiel'].includes(r.name))
-        || (a.dataset.nav === 'pruefung' && ['schriftlich', 'archiv', 'archivansicht'].includes(r.name));
+        || (a.dataset.nav === 'pruefung' && ['schriftlich', 'archiv', 'archivansicht', 'muendlich-archiv'].includes(r.name));
       a.classList.toggle('active', active);
       if (active) a.setAttribute('aria-current', 'page');
       else a.removeAttribute('aria-current');
@@ -641,6 +675,7 @@
       schriftlich: () => WrittenUI.render(r.param),
       archiv: () => WrittenUI.renderArchive(r.param),
       archivansicht: () => WrittenUI.renderViewer(r.param),
+      'muendlich-archiv': () => renderOralArchive(r.param),
       spiel: () => Games.render(r.param),
       analyse: renderAnalysis,
       einstellungen: renderSettings,
@@ -652,6 +687,7 @@
     if (key !== lastRoute && dictation) stopDictation();
     app.innerHTML = (views[r.name] || renderDashboard)();
     WrittenUI.afterRender(r);
+    if (r.name === 'muendlich-archiv' && !r.param) WrittenUI.wireSwipeRows();
     Games.afterRender(r);
     if (key !== lastRoute) {
       window.scrollTo(0, 0);
@@ -1715,12 +1751,13 @@
   }
 
   function renderExamIntro() {
+    const archived = oralArchiveList().length;
     return `
       <header class="page-head">
         <h1>Prüfungssimulation</h1>
         <p>Wie in der echten mündlichen Prüfung: drei Prüfer nacheinander, jeder mit eigener Prüfungszeit.</p>
       </header>
-      ${WrittenUI.examTabs('muendlich')}
+      <div class="written-top">${WrittenUI.examTabs('muendlich')}<a class="btn" href="#/muendlich-archiv">Archiv${archived ? ` (${archived})` : ''}</a></div>
       <div class="card">
         <h2>Ablauf</h2>
         <ol class="exam-steps intro">${Core.EXAM_PANEL.map(s => `<li><strong>${esc(s.examiner)}</strong><span>${esc(s.topics)}</span></li>`).join('')}</ol>
@@ -1746,14 +1783,49 @@
     return Number.isInteger(value) ? String(value) : value.toFixed(1).replace('.', ',');
   }
 
-  function renderExamResult() {
-    const all = examResults();
-    const weak = all.filter(r => r.score < 0.6).map(r => r.questionId);
-    const grades = Core.oralExamGrades(exam.sections);
+  function examModeLabel(rec) {
+    if (rec.reconstructed) return 'Rekonstruiert aus den gespeicherten Einzelergebnissen';
+    return `${rec.mode === 'ai' ? 'KI-Prüfer' : 'Trainings-Prüfer'} · ${rec.sections.length} Prüfer à ${rec.minutes} Minuten`;
+  }
+
+  function oralStatus(grades) {
+    if (!grades.complete) return 'Nicht alle Prüfer erreicht';
+    return grades.passed ? 'Bestanden (Orientierung)' : 'Noch nicht bestanden (Orientierung)';
+  }
+
+  function questionCount(n) {
+    return `${n} ${n === 1 ? 'Frage' : 'Fragen'}`;
+  }
+
+  function examResultRow(r) {
+    const q = questionById.get(r.questionId);
+    const label = q ? `<a href="#/frage/${esc(q.id)}">${esc(q.signLabel || q.topic)}</a>` : `${esc(r.questionId)} <span class="small muted">(nicht mehr enthalten)</span>`;
+    return `<tr><td>${label}</td><td>${pct(r.score)}</td>
+      <td class="small">${esc((r.missing || []).slice(0, 3).join(', ') || '–')}${r.comment ? `<br><span class="muted">${esc(r.comment)}</span>` : ''}</td></tr>`;
+  }
+
+  function examSectionCard(rec, section, g) {
+    let meta = 'Nicht mehr erreicht';
+    if (section.startedAt) {
+      const used = Math.min((rec.minutes || 60) * 60000, (section.endedAt || Date.now()) - section.startedAt);
+      meta = `${questionCount(section.results.length)}${rec.reconstructed ? '' : ` in ${clockText(used)} Minuten`} · ${g.percent} %`;
+    }
+    return `<div class="card section">
+      <h2>${esc(section.examiner)} · ${esc(section.name)}${g && g.grade !== null ? ` – Note ${g.grade}` : ''}</h2>
+      <p class="small muted">${meta}</p>
+      ${section.summary ? `<div class="panel info"><h3>Einschätzung des ${esc(section.genitive)}</h3><p style="white-space:pre-wrap">${esc(section.summary)}</p></div>` : ''}
+      ${section.results.length ? `<div class="table-wrap"><table>
+        <thead><tr><th>Thema</th><th>Ergebnis</th><th>Lücken</th></tr></thead>
+        <tbody>${section.results.map(examResultRow).join('')}</tbody></table></div>` : ''}
+    </div>`;
+  }
+
+  /** Noten, Fachnoten und Ergebnisse je Prüfer – für die laufende und archivierte Prüfungen. */
+  function oralResultBody(rec) {
+    const grades = Core.oralExamGrades(rec.sections);
     const byId = new Map(grades.parts.map(g => [g.id, g]));
-    const status = !grades.complete ? 'Abgebrochen – nicht alle Prüfer erreicht' : grades.passed ? 'Bestanden (Orientierung)' : 'Noch nicht bestanden (Orientierung)';
+    const answered = grades.parts.reduce((sum, g) => sum + g.questions, 0);
     return `
-      <header class="page-head"><h1>Auswertung</h1><p>${exam.mode === 'ai' ? 'KI-Prüfer' : 'Trainings-Prüfer'} · ${exam.sections.length} Prüfer à ${exam.minutes} Minuten</p></header>
       <div class="card section ws-result-head">
         <div class="ws-grade-big ${grades.passed ? 'good' : 'bad'}">
           <span>${grades.average === null ? '–' : `Ø ${esc(formatGrade(grades.average))}`}</span>
@@ -1761,41 +1833,143 @@
         </div>
         <div>
           <div class="kpi-label">Gesamtnote</div>
-          <p><span class="chip ${grades.passed ? 'sicher' : 'schwach'}">${esc(status)}</span></p>
-          <p class="small muted">${grades.percent} % der Leistung über ${all.length} ${all.length === 1 ? 'Frage' : 'Fragen'}. Die Gesamtnote ist der Durchschnitt der Fachnoten; bestanden heißt hier: jedes Fach mindestens „ausreichend“ (4).</p>
+          <p><span class="chip ${grades.passed ? 'sicher' : 'schwach'}">${esc(oralStatus(grades))}</span></p>
+          <p class="small muted">${grades.percent} % der Leistung über ${questionCount(answered)}. Die Gesamtnote ist der Durchschnitt der Fachnoten; bestanden heißt hier: jedes Fach mindestens „ausreichend“ (4).</p>
         </div>
       </div>
       <div class="card section">
         <h2>Noten je Fach</h2>
         <ul class="list ws-grade-list">${grades.parts.map(g => `<li>
           <div><strong>${esc(g.name)}</strong> <span class="small muted">(${esc(g.examiner)})</span>
-            <div class="small muted">${g.reached ? `${g.percent} % der Leistung · ${g.questions} ${g.questions === 1 ? 'Frage' : 'Fragen'}` : 'Nicht mehr erreicht'}</div></div>
+            <div class="small muted">${g.reached ? `${g.percent} % der Leistung · ${questionCount(g.questions)}` : rec.reconstructed ? 'Keine Ergebnisse gespeichert' : 'Nicht mehr erreicht'}</div></div>
           <span class="ws-grade ${g.grade !== null && g.grade <= 4 ? 'good' : 'bad'}">${g.grade === null ? '–' : `${g.grade} <small>${esc(Prompts.gradeLabel(g.grade))}</small>`}</span></li>`).join('')}</ul>
         <p class="small muted">Notenstufen wie bei der schriftlichen Prüfung: ab 92 % = 1, ab 81 % = 2, ab 67 % = 3, ab 50 % = 4, ab 30 % = 5, darunter 6.</p>
       </div>
-      ${exam.sections.map(section => {
-        const g = byId.get(section.id);
-        const used = section.startedAt ? Math.min(exam.minutes * 60000, (section.endedAt || Date.now()) - section.startedAt) : 0;
-        return `<div class="card section">
-          <h2>${esc(section.examiner)} · ${esc(section.name)}${g && g.grade !== null ? ` – Note ${g.grade}` : ''}</h2>
-          <p class="small muted">${section.startedAt ? `${section.results.length} ${section.results.length === 1 ? 'Frage' : 'Fragen'} in ${clockText(used)} Minuten · ${g.percent} %` : 'Nicht mehr erreicht'}</p>
-          ${section.summary ? `<div class="panel info"><h3>Einschätzung des ${esc(section.genitive)}</h3><p style="white-space:pre-wrap">${esc(section.summary)}</p></div>` : ''}
-          ${section.results.length ? `<div class="table-wrap"><table>
-            <thead><tr><th>Thema</th><th>Ergebnis</th><th>Lücken</th></tr></thead>
-            <tbody>${section.results.map(r => {
-              const q = questionById.get(r.questionId);
-              return `<tr><td><a href="#/frage/${esc(q.id)}">${esc(q.signLabel || q.topic)}</a></td>
-                <td>${pct(r.score)}</td><td class="small">${esc((r.missing || []).slice(0, 3).join(', ') || '–')}${r.comment ? `<br><span class="muted">${esc(r.comment)}</span>` : ''}</td></tr>`;
-            }).join('')}</tbody></table></div>` : ''}
-        </div>`;
-      }).join('')}
+      ${rec.sections.map(section => examSectionCard(rec, section, byId.get(section.id))).join('')}`;
+  }
+
+  function weakButton(rec) {
+    const weak = rec.sections.flatMap(s => s.results).filter(r => r.score < 0.6 && questionById.has(r.questionId)).map(r => r.questionId);
+    return weak.length ? `<button class="btn primary" data-action="practice-ids" data-ids="${esc(weak.join(','))}">Lücken jetzt üben</button>` : '';
+  }
+
+  function transcriptDetails(transcript) {
+    if (!transcript || !transcript.length) return '';
+    return `<details class="disclosure" style="width:100%"><summary>Gesprächsverlauf</summary>
+      <div class="chat">${transcript.map(examBubble).join('')}</div></details>`;
+  }
+
+  function renderExamResult() {
+    return `
+      <header class="page-head"><h1>Auswertung</h1><p>${esc(examModeLabel(exam))}</p></header>
+      ${exam.archiveId ? `<p class="small muted">Im <a href="#/muendlich-archiv/${esc(exam.archiveId)}">Archiv</a> gespeichert.</p>` : ''}
+      ${oralResultBody(exam)}
       <div class="btn-row">
-        ${weak.length ? `<button class="btn primary" data-action="practice-ids" data-ids="${esc(weak.join(','))}">Lücken jetzt üben</button>` : ''}
+        ${weakButton(exam)}
         <button class="btn" data-action="exam-new">Neue Prüfung</button>
-        <details class="disclosure" style="width:100%"><summary>Gesprächsverlauf</summary>
-          <div class="chat">${exam.transcript.map(examBubble).join('')}</div>
-        </details>
+        <a class="btn" href="#/muendlich-archiv">Zum Archiv</a>
+        ${transcriptDetails(exam.transcript)}
       </div>`;
+  }
+
+  // ------------------------------------------------------------------ Archiv der mündlichen Prüfungen
+
+  /** Gespeicherte Prüfungen und – aus den Einzelergebnissen – frühere, die neueste zuerst. */
+  function oralArchiveList() {
+    const covered = oral.exams.map(e => [e.from, e.to]);
+    const rebuilt = Core.reconstructOralExams(state.attempts, id => Core.examPanelFor(questionById.get(id)), covered)
+      .filter(e => !oral.hidden.includes(e.id));
+    return oral.exams.concat(rebuilt).sort((a, b) => b.at - a.at);
+  }
+
+  function oralArchiveHead(title, text) {
+    return `<header class="page-head">
+      <div class="page-head-nav"><a class="back-arrow" href="#/pruefung" aria-label="Zurück zur mündlichen Prüfung" title="Zurück zur mündlichen Prüfung"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></a><a href="#/pruefung" class="small">Mündliche Prüfung</a>${title !== 'Archiv' ? ' · <a href="#/muendlich-archiv" class="small">Archiv</a>' : ''}</div>
+      <h1>${esc(title)}</h1>
+      ${text ? `<p>${text}</p>` : ''}
+    </header>`;
+  }
+
+  function averageOf(values) {
+    return values.length ? Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 10) / 10 : null;
+  }
+
+  /**
+   * Wo stehe ich? Je Fach der Durchschnitt der letzten bis zu drei Noten in diesem Fach,
+   * gesamt der Durchschnitt der Fächer – abgebrochene Prüfungen verzerren so nichts.
+   */
+  function oralStanding(list) {
+    const graded = list.map(rec => Core.oralExamGrades(rec.sections));
+    const subjectsList = Core.EXAM_PANEL.map(p => {
+      const last = graded.map(g => g.parts.find(x => x.id === p.id)).filter(x => x && x.grade !== null).slice(0, 3);
+      return { panel: p, count: last.length, grade: averageOf(last.map(x => x.grade)) };
+    });
+    const known = subjectsList.filter(x => x.grade !== null);
+    if (!known.length) return '';
+    const overall = averageOf(known.map(x => x.grade));
+    const rows = subjectsList.map(({ panel, count, grade }) => `<li><div><strong>${esc(panel.name)}</strong> <span class="small muted">(${esc(panel.examiner)})</span>
+        <div class="small muted">${count ? `aus ${count === 1 ? 'der letzten Prüfung' : `den letzten ${count} Prüfungen`}` : 'noch keine Note'}</div></div>
+        <span class="ws-grade ${grade !== null && grade <= 4 ? 'good' : 'bad'}">${grade === null ? '–' : `${esc(formatGrade(grade))} <small>${esc(Prompts.gradeLabel(grade))}</small>`}</span></li>`).join('');
+    const complete = known.length === subjectsList.length;
+    return `<div class="card section ws-result-head">
+        <div class="ws-grade-big ${complete && known.every(x => x.grade <= 4) ? 'good' : 'bad'}"><span>Ø ${esc(formatGrade(overall))}</span><small>${esc(Prompts.gradeLabel(overall))}</small></div>
+        <div><div class="kpi-label">Ihr Stand</div><p class="small muted">Je Fach der Durchschnitt Ihrer letzten bis zu drei Noten, gesamt der Durchschnitt der Fächer${complete ? '' : ' (bisher nur aus den Fächern mit Note)'}.</p></div>
+      </div>
+      <div class="card section"><ul class="list ws-grade-list">${rows}</ul></div>`;
+  }
+
+  function oralArchiveRow(rec) {
+    const grades = Core.oralExamGrades(rec.sections);
+    const answered = grades.parts.reduce((sum, g) => sum + g.questions, 0);
+    const perSubject = grades.parts.filter(g => g.grade !== null).map(g => `${g.name} ${g.grade}`).join(' · ');
+    const name = `Mündliche Prüfung vom ${WrittenUI.dateLabel(rec.at)}`;
+    return `<li class="swipe-row" data-id="${esc(rec.id)}">
+      <div class="swipe-content">
+        <div><a href="#/muendlich-archiv/${esc(rec.id)}">${esc(name)}</a>
+          <div class="small muted">${rec.reconstructed ? 'Rekonstruiert' : rec.mode === 'ai' ? 'KI-Prüfer' : 'Trainings-Prüfer'} · ${questionCount(answered)}${perSubject ? ` · ${esc(perSubject)}` : ''}</div></div>
+        ${grades.average === null ? '<span class="chip offen">Keine Note</span>' : `<span class="chip ${grades.passed ? 'sicher' : 'schwach'}">Ø ${esc(formatGrade(grades.average))}</span>`}
+      </div>
+      <button type="button" class="swipe-delete" data-action="oral-archive-remove" data-id="${esc(rec.id)}" aria-label="${esc(name)} aus dem Archiv löschen" title="Löschen" tabindex="-1">${WrittenUI.icon('trash')}</button>
+    </li>`;
+  }
+
+  function renderOralArchiveList() {
+    const list = oralArchiveList();
+    const rebuilt = list.some(rec => rec.reconstructed);
+    return `${oralArchiveHead('Archiv', 'Ihre mündlichen Prüfungen mit Noten – die neueste zuerst.')}
+      ${list.length ? `${oralStanding(list)}
+        <p class="small muted">Tipp: Eintrag nach links wischen, um ihn zu löschen.${rebuilt ? ' „Rekonstruiert“ heißt: Die Prüfung lief, bevor es das Archiv gab. Noten und Ergebnisse je Frage stammen aus Ihrem gespeicherten Lernstand – Gesprächsverlauf und Einschätzungen der Prüfer gibt es dazu nicht.' : ''}</p>
+        <div class="card swipe-list"><ul class="list">${list.map(oralArchiveRow).join('')}</ul></div>`
+        : '<div class="card empty">Noch keine mündliche Prüfung. Jede beendete Prüfung landet hier mit Noten und Gesprächsverlauf.</div>'}`;
+  }
+
+  function renderOralArchive(id) {
+    if (!id) return renderOralArchiveList();
+    const rec = oralArchiveList().find(e => e.id === id);
+    if (!rec) return `${oralArchiveHead('Archiv', '')}<div class="card empty">Dieser Eintrag ist nicht im Archiv. <a href="#/muendlich-archiv">Zum Archiv</a></div>`;
+    return `${oralArchiveHead(`Mündliche Prüfung vom ${WrittenUI.dateLabel(rec.at)}`, esc(examModeLabel(rec)))}
+      ${oralResultBody(rec)}
+      <div class="btn-row">
+        ${weakButton(rec)}
+        <a class="btn" href="#/pruefung">Neue Prüfung</a>
+        <button class="btn" data-action="oral-archive-delete" data-id="${esc(rec.id)}" data-confirm="Diese Prüfung aus dem Archiv löschen? Nochmal tippen">Aus dem Archiv löschen</button>
+        <a class="btn" href="#/muendlich-archiv">Zum Archiv</a>
+        ${transcriptDetails(rec.transcript)}
+      </div>`;
+  }
+
+  /** Löschen; rekonstruierte Prüfungen werden nur ausgeblendet (der Lernstand bleibt). */
+  function deleteOralExam(id, stay) {
+    if (id.startsWith('rek-')) {
+      if (!oral.hidden.includes(id)) oral.hidden.push(id);
+    } else {
+      const i = oral.exams.findIndex(e => e.id === id);
+      if (i >= 0) oral.exams.splice(i, 1);
+    }
+    saveOral();
+    toast('Aus dem Archiv gelöscht.');
+    if (stay) render();
+    else go('#/muendlich-archiv');
   }
 
   function startExam() {
@@ -1861,9 +2035,34 @@
       startSection(exam.current + 1);
       return;
     }
+    finishExam();
+    render();
+  }
+
+  /** Prüfung beendet: Uhr anhalten und ins Archiv legen. */
+  function finishExam() {
     exam.finished = true;
     stopExamClock();
-    render();
+    if (!exam.archiveId && examResults().length) archiveOralExam();
+  }
+
+  function archiveOralExam() {
+    const t = now();
+    const sections = exam.sections.map(s => ({
+      id: s.id, name: s.name, examiner: s.examiner, genitive: s.genitive,
+      startedAt: s.startedAt, endedAt: s.endedAt || (s.startedAt ? t : 0), summary: s.summary || '',
+      results: s.results.map(r => ({ questionId: r.questionId, score: r.score, missing: (r.missing || []).slice(0, 6), comment: r.comment || '' }))
+    }));
+    const started = sections.filter(s => s.startedAt).map(s => s.startedAt);
+    const record = {
+      id: `oral-${t.toString(36)}`, at: t, from: started.length ? Math.min(...started) : t, to: t,
+      mode: exam.mode, minutes: exam.minutes, sections,
+      transcript: exam.transcript.map(x => ({ role: x.role, who: x.who || '', text: x.text }))
+    };
+    oral.exams.push(record);
+    while (oral.exams.length > ORAL_LIMIT) oral.exams.shift();
+    saveOral();
+    exam.archiveId = record.id;
   }
 
   function finishExamQuestion(questionId, score, missing, comment) {
@@ -2217,9 +2416,15 @@
       else {
         const section = examSection();
         if (section && !section.done) section.endedAt = Date.now();
-        exam.finished = true;
+        finishExam();
       }
       render();
+    },
+    'oral-archive-delete': el => deleteOralExam(el.dataset.id),
+    'oral-archive-remove': el => {
+      const row = el.closest('.swipe-row');
+      if (row) row.classList.add('removing');
+      setTimeout(() => deleteOralExam(el.dataset.id, true), 180);
     },
     'exam-new': () => {
       stopExamClock();

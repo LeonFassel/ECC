@@ -1530,5 +1530,5 @@
     return param ? renderWorkspace(param) : renderList();
   }
 
-  root.FLWrittenUI = { init, render, renderArchive, renderViewer, afterRender, examTabs, hasExams: () => exams.length > 0 };
+  root.FLWrittenUI = { init, render, renderArchive, renderViewer, afterRender, examTabs, icon, dateLabel, wireSwipeRows, hasExams: () => exams.length > 0 };
 })(typeof self !== 'undefined' ? self : this);
