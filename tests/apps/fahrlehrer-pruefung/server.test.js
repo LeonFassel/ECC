@@ -168,7 +168,7 @@ async function runTests() {
 
   const service = {
     evaluate: async (q, answer) => ({ score: 0.5, covered: [], missing: [], errors: [], feedback: `${q.id}:${answer}`, tip: '' }),
-    examine: async (qs, history) => ({ message: `${qs.length}/${history.length}`, assessment: null, finished: false, summary: '' }),
+    examine: async (qs, history, options) => ({ message: `${qs.length}/${history.length}${options ? `/${options.examiner}/${options.minutes}/${options.timeUp}` : ''}`, assessment: null, finished: false, summary: '' }),
     gradeWritten: async () => ({ parts: [] }),
     answerSearch: async (query, sources) => ({ found: true, answer: `${query}:${sources.map(q => q.id).join(',')}`, laws: [], sources: [] })
   };
@@ -202,6 +202,13 @@ async function runTests() {
     assert.ok(params.messages[0].content.includes('<suchanfrage>Wie lange dauert die Probezeit?</suchanfrage>'));
     const none = await ai.createAiService(fakeClient(() => fakeResponse({ found: true, answer: '  ', laws: ['§ 1'], sources: [question.id] }))).answerSearch('x', [question]);
     assert.deepStrictEqual(none, { found: false, answer: '', laws: [], sources: [] });
+  }));
+
+  results.push(await test('examiner endpoint only accepts the fixed examiner roles', async () => {
+    const tech = await post(fullUrl, '/api/examiner', { questionIds: [question.id], history: [], panel: 'technik', minutes: 999, timeUp: true });
+    assert.strictEqual((await tech.json()).message, '1/0/Techniker/10/true');
+    const unknown = await post(fullUrl, '/api/examiner', { questionIds: [question.id], history: [], panel: '<b>Chef</b>' });
+    assert.strictEqual((await unknown.json()).message, '1/0');
   }));
 
   results.push(await test('evaluate endpoint validates input and forwards to the AI service', async () => {

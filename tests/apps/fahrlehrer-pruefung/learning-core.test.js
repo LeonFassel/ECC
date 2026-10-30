@@ -370,6 +370,26 @@ function runTests() {
     assert.ok(noSigns.every(id => !q(id).sign));
   }));
 
+  results.push(test('exam panel: three examiners with their own subjects', () => {
+    assert.deepStrictEqual(Core.EXAM_PANEL.map(s => s.examiner), ['Rechtler', 'Pädagoge', 'Techniker']);
+    assert.strictEqual(Core.examPanelFor({ subject: 'zeichen' }), 'recht');
+    assert.strictEqual(Core.examPanelFor({ subject: 'verhalten', topic: 'Abstand' }), 'recht');
+    assert.strictEqual(Core.examPanelFor({ subject: 'recht', topic: 'Pflichten des Fahrlehrers' }), 'paedagogik');
+    assert.strictEqual(Core.examPanelFor({ subject: 'recht', topic: 'Fahrlehrerregister' }), 'recht');
+    assert.strictEqual(Core.examPanelFor({ subject: 'praxis', topic: 'Sonderfahrten' }), 'paedagogik');
+    assert.strictEqual(Core.examPanelFor({ subject: 'technik' }), 'technik');
+    assert.strictEqual(Core.examPanelFor({ subject: 'karteikarten', collection: 'karteikarten' }), null);
+    const panel = Core.buildExamPanel(data, Core.createState(), NOW, 6);
+    assert.deepStrictEqual(panel.map(s => s.id), ['recht', 'paedagogik', 'technik']);
+    for (const section of panel) {
+      assert.ok(section.ids.length > 0 && section.ids.length <= 6);
+      assert.strictEqual(new Set(section.ids).size, section.ids.length);
+      assert.ok(section.ids.every(id => Core.examPanelFor(q(id)) === section.id), `${section.id} only asks its own subjects`);
+    }
+    const recht = panel[0].ids.map(id => q(id));
+    if (recht.some(x => x.subject === 'zeichen')) assert.ok(recht[0].subject !== 'zeichen', 'starts with a law question');
+  }));
+
   results.push(test('examinerFollowUp probes missing points on weak answers', () => {
     const item = q('verhalten-02');
     const weak = Core.evaluateAnswer(item, 'Man fährt zur Seite.');

@@ -596,6 +596,60 @@
     return picked;
   }
 
+  /**
+   * Mündliche Prüfung wie in echt: drei Prüfer nacheinander, jeder mit eigener
+   * Prüfungszeit. Der Rechtler fragt Verkehrszeichen, Recht und Verkehrsverhalten,
+   * der Pädagoge Pädagogik und Fahrlehrerwesen, der Techniker Technik.
+   */
+  const EXAM_PANEL = [
+    { id: 'recht', name: 'Recht', examiner: 'Rechtler', genitive: 'Rechtlers', topics: 'Verkehrszeichen, Verkehrsrecht und Verkehrsverhalten', intro: 'Ich prüfe Sie in Recht – Verkehrszeichen, Verkehrsrecht und Verkehrsverhalten.' },
+    { id: 'paedagogik', name: 'Pädagogik', examiner: 'Pädagoge', genitive: 'Pädagogen', topics: 'Pädagogik und Fahrlehrerwesen', intro: 'Ich prüfe Sie in Pädagogik und im Fahrlehrerwesen.' },
+    { id: 'technik', name: 'Technik', examiner: 'Techniker', genitive: 'Technikers', topics: 'Fahrzeugtechnik', intro: 'Ich prüfe Sie in Fahrzeugtechnik.' }
+  ];
+
+  const TEACHING_TOPIC = /Fahrlehrer(?!register)|Fahrschul|FahrlG|FahrschAusbO|FahrlAusbV|Ausbildungsnachweis|Ausbildungsplan|Tagesnachweis|Diagrammkarte/i;
+
+  /** Welcher Prüfer eine Frage stellt (null = nicht in der mündlichen Prüfung, z. B. Karteikarten). */
+  function examPanelFor(q) {
+    if (!q || q.collection === 'karteikarten' || q.subject === 'karteikarten') return null;
+    if (q.subject === 'technik') return 'technik';
+    if (q.subject === 'paedagogik' || q.subject === 'praxis') return 'paedagogik';
+    if (q.subject === 'recht' || q.subject === 'verhalten') return TEACHING_TOPIC.test(q.topic || '') ? 'paedagogik' : 'recht';
+    if (q.subject === 'zeichen') return 'recht';
+    return null;
+  }
+
+  /**
+   * Fragen je Prüfer, schwächere und neue Themen zuerst (mit Zufall). Beim Rechtler
+   * ist etwa jede dritte Frage ein Verkehrszeichen. perSection: Vorrat je Prüfer
+   * (mehr Fragen, als in die Zeit passen – die Zeit begrenzt die Prüfung).
+   */
+  function buildExamPanel(data, state, now, perSection) {
+    const ts = typeof now === 'number' ? now : Date.now();
+    const rand = seededRandom(`panel-${ts}`);
+    const size = perSection || 12;
+    const rank = list => list.map(q => {
+      const m = questionMastery(state.attempts[q.id], ts);
+      return { q, key: (m === null ? 0.4 : m) + rand() * 0.3 };
+    }).sort((a, b) => a.key - b.key).map(x => x.q);
+    return EXAM_PANEL.map(section => {
+      const pool = data.questions.filter(q => examPanelFor(q) === section.id);
+      let ids;
+      if (section.id === 'recht') {
+        const signs = rank(pool.filter(q => q.subject === 'zeichen'));
+        const law = rank(pool.filter(q => q.subject !== 'zeichen'));
+        ids = [];
+        while (ids.length < size && (signs.length || law.length)) {
+          const takeSign = signs.length && (!law.length || ids.length % 3 === 1);
+          ids.push((takeSign ? signs : law).shift().id);
+        }
+      } else {
+        ids = rank(pool).slice(0, size).map(q => q.id);
+      }
+      return Object.assign({}, section, { ids });
+    }).filter(section => section.ids.length > 0);
+  }
+
   /** Nachfrage des lokalen Prüfers – greift fehlende Punkte auf. */
   function examinerFollowUp(question, evaluation, round) {
     if (evaluation.score >= 0.85 && round === 0) {
@@ -645,6 +699,9 @@
     dailyPlan,
     streak,
     pickExamQuestions,
+    EXAM_PANEL,
+    examPanelFor,
+    buildExamPanel,
     examinerFollowUp,
     evaluateExamAnswers,
     examVerdict

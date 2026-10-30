@@ -22,6 +22,7 @@
   const API_KEY_STORE = 'fl-anthropic-api-key';
   let practice = null;
   let exam = null;
+  let examClock = 0;
   let lastRoute = '';
   let currentHash = window.location.hash;
   let pendingConfirm = null;
@@ -274,19 +275,27 @@
     }
   }
 
-  async function aiExamine(ids, history) {
-    if (aiStatus.mode === 'server') return postJson('api/examiner', { questionIds: ids, history });
+  /** panel: { panel: 'recht'|'paedagogik'|'technik', minutes, first, timeUp } – Rolle des Prüfers. */
+  async function aiExamine(ids, history, panel) {
+    const p = panel || {};
+    if (aiStatus.mode === 'server') {
+      return postJson('api/examiner', { questionIds: ids, history, panel: p.panel, minutes: p.minutes, first: p.first, timeUp: p.timeUp });
+    }
     const list = ids.map(id => questionById.get(id)).filter(Boolean);
+    const section = Core.EXAM_PANEL.find(s => s.id === p.panel);
+    const options = section
+      ? { examiner: section.examiner, name: section.name, minutes: p.minutes, first: p.first, timeUp: p.timeUp }
+      : { timeUp: p.timeUp };
     if (aiStatus.mode === 'apikey') {
       try {
-        return await apiService.examine(list, history);
+        return await apiService.examine(list, history, options);
       } catch (err) {
         throw new Error(apiErrorMessage(err));
       }
     }
-    const lead = `${Prompts.EXAMINER_SYSTEM}\n\n${Prompts.EXAMINER_FORMAT}\n\n${Prompts.examinerPlan(list)}`;
+    const lead = `${Prompts.EXAMINER_SYSTEM}\n\n${Prompts.EXAMINER_FORMAT}\n\n${Prompts.examinerPlan(list, options)}`;
     try {
-      return Prompts.normalizeExaminerTurn(await sampleFn.json(Prompts.examinerMessages(list, history, lead), { cache: false }));
+      return Prompts.normalizeExaminerTurn(await sampleFn.json(Prompts.examinerMessages(list, history, lead, options), { cache: false }));
     } catch (err) {
       throw new Error(sampleErrorMessage(err));
     }
@@ -1568,60 +1577,131 @@
   }
 
   // ------------------------------------------------------------------ Prüfungssimulation
+  // Wie in echt: drei Prüfer nacheinander (Rechtler, Pädagoge, Techniker), jeder mit
+  // eigener Prüfungszeit. Ist die Zeit um, wird keine neue Frage mehr gestellt; die
+  // laufende Antwort darf noch zu Ende gegeben werden, dann kommt der nächste Prüfer.
+
+  const MAX_AI_SECTION_QUESTIONS = 8;
+
+  function examSection() {
+    return exam ? exam.sections[exam.current] : null;
+  }
+
+  function examResults() {
+    return exam ? exam.sections.flatMap(s => s.results) : [];
+  }
+
+  function remainingMs(section) {
+    return section && section.endsAt ? Math.max(0, section.endsAt - Date.now()) : 0;
+  }
+
+  function clockText(ms) {
+    const total = Math.ceil(ms / 1000);
+    return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+  }
+
+  // Uhr oben rechts: jede Sekunde nur die Anzeige aktualisieren, beim Ablauf einmal neu zeichnen.
+  function startExamClock() {
+    stopExamClock();
+    examClock = window.setInterval(() => {
+      const section = examSection();
+      if (!exam || exam.finished || !section || !section.endsAt) return;
+      const ms = remainingMs(section);
+      const el = document.getElementById('exam-clock');
+      if (el) {
+        el.textContent = ms > 0 ? clockText(ms) : 'Zeit abgelaufen';
+        el.classList.toggle('warn', ms > 0 && ms <= 120000);
+        el.classList.toggle('over', ms === 0);
+      }
+      if (ms === 0 && !section.timeUp) {
+        section.timeUp = true;
+        if (route().name === 'pruefung') render();
+      }
+    }, 1000);
+  }
+
+  function stopExamClock() {
+    if (examClock) window.clearInterval(examClock);
+    examClock = 0;
+  }
+
+  function examBubble(t) {
+    if (t.role === 'divider') return `<div class="chat-divider"><span>${esc(t.text)}</span></div>`;
+    return `<div class="bubble ${t.role}"><span class="who">${esc(t.role === 'examiner' ? t.who || 'Prüfer' : 'Sie')}</span>${esc(t.text)}</div>`;
+  }
+
+  function examSteps() {
+    return `<ol class="exam-steps">${exam.sections.map((s, i) => {
+      const status = s.done ? 'done' : i === exam.current ? 'active' : '';
+      return `<li class="${status}"><strong>${esc(s.examiner)}</strong><span>${esc(s.name)}${s.done ? ` · ${s.results.length} ${s.results.length === 1 ? 'Frage' : 'Fragen'}` : ''}</span></li>`;
+    }).join('')}</ol>`;
+  }
 
   function renderExam() {
     if (!exam) return renderExamIntro();
     if (exam.finished) return renderExamResult();
-
-    const total = exam.ids.length;
-    const done = exam.results.length;
+    const section = examSection();
+    const ms = remainingMs(section);
+    const next = exam.sections[exam.current + 1];
+    const nextLabel = next ? `Weiter zu ${next.name} (${next.examiner})` : 'Prüfung beenden und auswerten';
     return `
       <header class="page-head">
         <h1>Mündliche Prüfung</h1>
-        <p>${exam.mode === 'ai' ? 'KI-Prüfer' : 'Trainings-Prüfer (offline)'} · Frage ${Math.min(done + 1, total)} von ${total}</p>
+        <p>${exam.mode === 'ai' ? 'KI-Prüfer' : 'Trainings-Prüfer'} · ${exam.sections.length} Prüfer à ${exam.minutes} Minuten</p>
       </header>
-      ${bar(done / total, 'thin')}
+      ${examSteps()}
+      <div class="exam-bar">
+        <div><span class="small muted">Prüfer ${exam.current + 1} von ${exam.sections.length}</span><strong>${esc(section.examiner)} · ${esc(section.name)}</strong></div>
+        <div class="exam-clock${ms === 0 ? ' over' : ms <= 120000 ? ' warn' : ''}" id="exam-clock" role="timer" aria-label="Verbleibende Zeit dieses Prüfers">${ms > 0 ? clockText(ms) : 'Zeit abgelaufen'}</div>
+      </div>
       <div class="card section">
         <div class="chat" aria-live="polite">
-          ${exam.transcript.map(t => `<div class="bubble ${t.role}"><span class="who">${t.role === 'examiner' ? 'Prüfer' : 'Sie'}</span>${esc(t.text)}</div>`).join('')}
-          ${exam.loading ? '<div class="bubble examiner"><span class="spinner" aria-label="Prüfer denkt nach"></span></div>' : ''}
+          ${exam.transcript.map(examBubble).join('')}
+          ${exam.loading ? `<div class="bubble examiner"><span class="who">${esc(section.examiner)}</span><span class="spinner" aria-label="Prüfer denkt nach"></span></div>` : ''}
         </div>
         ${exam.error ? `<div class="panel bad"><p>${esc(exam.error)}</p><button class="btn" data-action="exam-retry">Erneut versuchen</button></div>` : ''}
+        ${section.timeUp && !exam.loading ? `<div class="panel warn"><h3>Die ${exam.minutes} Minuten für ${esc(section.name)} sind um</h3>
+          <p>Es kommt keine neue Frage mehr. Sie können Ihre laufende Antwort noch abgeben – danach geht es weiter.</p>
+          <div class="btn-row"><button class="btn" data-action="exam-next-section">${esc(nextLabel)}</button></div></div>` : ''}
         ${questionStage(currentExamQuestion())}
         <label for="exam-answer" class="kpi-label">Ihre Antwort – tippen oder einsprechen</label>
         <textarea id="exam-answer" data-input="exam-answer" placeholder="Antworten Sie so, wie Sie es in der Prüfung sagen würden …" ${exam.loading ? 'disabled' : ''}>${esc(exam.draft)}</textarea>
         ${answerTools('exam', 'exam-send', 'Antwort abgeben')}
         <div class="btn-row" style="margin-top:6px">
-          <button class="btn" data-action="exam-abort" ${exam.results.length ? 'data-confirm="Jetzt beenden und auswerten? Nochmal tippen"' : ''}>Prüfung beenden</button>
+          <button class="btn" data-action="exam-abort" ${examResults().length ? 'data-confirm="Jetzt beenden und auswerten? Nochmal tippen"' : ''}>Prüfung abbrechen</button>
         </div>
       </div>`;
   }
 
   function currentExamQuestion() {
-    if (!exam || exam.loading || exam.transcript.length === 0) return null;
-    const index = exam.mode === 'local' ? exam.index : exam.results.length;
-    return questionById.get(exam.ids[Math.min(index, exam.ids.length - 1)]);
+    const section = examSection();
+    if (!section || exam.loading || section.transcript.length === 0) return null;
+    const index = exam.mode === 'local' ? section.index : section.results.length;
+    return questionById.get(section.ids[Math.min(index, section.ids.length - 1)]);
   }
 
   function renderExamIntro() {
     return `
       <header class="page-head">
         <h1>Prüfungssimulation</h1>
-        <p>Der Prüfer stellt Fragen aus allen Fächern und hakt nach – wie in der echten mündlichen Prüfung.</p>
+        <p>Wie in der echten mündlichen Prüfung: drei Prüfer nacheinander, jeder mit eigener Prüfungszeit.</p>
       </header>
       ${WrittenUI.examTabs('muendlich')}
       <div class="card">
-        <h2>Prüfer wählen</h2>
+        <h2>Ablauf</h2>
+        <ol class="exam-steps intro">${Core.EXAM_PANEL.map(s => `<li><strong>${esc(s.examiner)}</strong><span>${esc(s.topics)}</span></li>`).join('')}</ol>
+        <p class="small muted">Jeder Prüfer fragt, bis seine Zeit abgelaufen ist. Danach stellt er keine Frage mehr – Sie dürfen Ihre laufende Antwort noch abgeben, dann übernimmt der nächste Prüfer.</p>
+        <h2 style="margin-top:18px">Prüfer wählen</h2>
         <label class="option"><input type="radio" name="exam-mode" value="local" ${aiStatus.ai ? '' : 'checked'}>
           <span><strong>Trainings-Prüfer</strong><br><span class="small muted">Funktioniert offline. Nachfragen orientieren sich an fehlenden Kernpunkten.</span></span></label>
         <label class="option"><input type="radio" name="exam-mode" value="ai" ${aiStatus.ai ? 'checked' : 'disabled'}>
           <span><strong>KI-Prüfer</strong><br><span class="small muted">${aiStatus.ai
-            ? 'Realistisches Prüfungsgespräch mit individuellen Nachfragen und ausführlicher Auswertung.'
+            ? 'Realistisches Prüfungsgespräch: jeder Prüfer mit eigener Rolle, individuellen Nachfragen und eigener Einschätzung.'
             : 'Nicht verfügbar – siehe Einstellungen.'}</span></span></label>
-        <h2 style="margin-top:18px">Anzahl Fragen</h2>
-        <select id="exam-count" aria-label="Anzahl Fragen">
-          <option value="3">3 Fragen (Kurztest, ca. 10 Min.)</option>
-          <option value="6" selected>6 Fragen – ein Fach je Frage (ca. 25 Min.)</option>
+        <h2 style="margin-top:18px">Zeit je Prüfer</h2>
+        <select id="exam-minutes" aria-label="Zeit je Prüfer">
+          <option value="10" selected>10 Minuten je Prüfer – wie in echt (30 Minuten)</option>
+          <option value="5">5 Minuten je Prüfer – Kurztraining (15 Minuten)</option>
         </select>
         <div class="btn-row"><button class="btn primary" data-action="exam-start">Prüfung starten</button></div>
         <p class="small muted" style="margin-top:12px">Tipp: Antworten Sie strukturiert – erst die Kernaussage, dann Rechtsgrundlage, dann ein Praxisbeispiel.</p>
@@ -1629,114 +1709,190 @@
   }
 
   function renderExamResult() {
-    const verdict = Core.examVerdict(exam.results.map(r => r.score));
-    const weak = exam.results.filter(r => r.score < 0.6).map(r => r.questionId);
+    const all = examResults();
+    const verdict = Core.examVerdict(all.map(r => r.score));
+    const weak = all.filter(r => r.score < 0.6).map(r => r.questionId);
     return `
-      <header class="page-head"><h1>Auswertung</h1><p>${exam.mode === 'ai' ? 'KI-Prüfer' : 'Trainings-Prüfer'}</p></header>
+      <header class="page-head"><h1>Auswertung</h1><p>${exam.mode === 'ai' ? 'KI-Prüfer' : 'Trainings-Prüfer'} · ${exam.sections.length} Prüfer à ${exam.minutes} Minuten</p></header>
       <div class="card">
         <div class="kpi-label">Gesamtergebnis</div>
         <div class="kpi-value">${pct(verdict.avg)}</div>
         ${bar(verdict.avg, verdict.passed ? 'good' : 'bad')}
         <p style="margin-top:10px"><strong>${esc(verdict.label)}</strong></p>
-        ${exam.summary ? `<div class="panel info"><h3>Einschätzung des Prüfers</h3><p style="white-space:pre-wrap">${esc(exam.summary)}</p></div>` : ''}
       </div>
-      <div class="card section table-wrap">
-        <table>
-          <thead><tr><th>Fach</th><th>Thema</th><th>Ergebnis</th><th>Lücken</th></tr></thead>
-          <tbody>${exam.results.map(r => {
-            const q = questionById.get(r.questionId);
-            return `<tr><td>${esc(subjectById.get(q.subject).name)}</td><td><a href="#/frage/${esc(q.id)}">${esc(q.topic)}</a></td>
-              <td>${pct(r.score)}</td><td class="small">${esc((r.missing || []).slice(0, 3).join(', ') || '–')}${r.comment ? `<br><span class="muted">${esc(r.comment)}</span>` : ''}</td></tr>`;
-          }).join('')}</tbody>
-        </table>
-      </div>
+      ${exam.sections.map(section => {
+        const v = Core.examVerdict(section.results.map(r => r.score));
+        const used = section.startedAt ? Math.min(exam.minutes * 60000, (section.endedAt || Date.now()) - section.startedAt) : 0;
+        return `<div class="card section">
+          <h2>${esc(section.examiner)} · ${esc(section.name)}</h2>
+          <p class="small muted">${section.startedAt ? `${section.results.length} ${section.results.length === 1 ? 'Frage' : 'Fragen'} in ${clockText(used)} Minuten` : 'Nicht mehr erreicht'}${section.results.length ? ` · Ergebnis ${pct(v.avg)}` : ''}</p>
+          ${section.summary ? `<div class="panel info"><h3>Einschätzung des ${esc(section.genitive)}</h3><p style="white-space:pre-wrap">${esc(section.summary)}</p></div>` : ''}
+          ${section.results.length ? `<div class="table-wrap"><table>
+            <thead><tr><th>Thema</th><th>Ergebnis</th><th>Lücken</th></tr></thead>
+            <tbody>${section.results.map(r => {
+              const q = questionById.get(r.questionId);
+              return `<tr><td><a href="#/frage/${esc(q.id)}">${esc(q.signLabel || q.topic)}</a></td>
+                <td>${pct(r.score)}</td><td class="small">${esc((r.missing || []).slice(0, 3).join(', ') || '–')}${r.comment ? `<br><span class="muted">${esc(r.comment)}</span>` : ''}</td></tr>`;
+            }).join('')}</tbody></table></div>` : ''}
+        </div>`;
+      }).join('')}
       <div class="btn-row">
         ${weak.length ? `<button class="btn primary" data-action="practice-ids" data-ids="${esc(weak.join(','))}">Lücken jetzt üben</button>` : ''}
         <button class="btn" data-action="exam-new">Neue Prüfung</button>
         <details class="disclosure" style="width:100%"><summary>Gesprächsverlauf</summary>
-          <div class="chat">${exam.transcript.map(t => `<div class="bubble ${t.role}"><span class="who">${t.role === 'examiner' ? 'Prüfer' : 'Sie'}</span>${esc(t.text)}</div>`).join('')}</div>
+          <div class="chat">${exam.transcript.map(examBubble).join('')}</div>
         </details>
       </div>`;
   }
 
   function startExam() {
     const modeInput = document.querySelector('input[name="exam-mode"]:checked');
-    const countInput = document.getElementById('exam-count');
+    const minutesInput = document.getElementById('exam-minutes');
     const mode = modeInput && modeInput.value === 'ai' && aiStatus.ai ? 'ai' : 'local';
-    const count = Number(countInput ? countInput.value : 6);
-    const ids = Core.pickExamQuestions(window.FLData, state, now(), count);
-    exam = { mode, ids, index: 0, round: 0, answers: [], transcript: [], results: [], draft: '', loading: false, error: null, finished: false, summary: '' };
-
-    if (mode === 'local') {
-      const first = questionById.get(ids[0]);
-      exam.transcript.push({ role: 'examiner', text: `Guten Tag, nehmen Sie bitte Platz. Wir beginnen mit dem Fach ${subjectById.get(first.subject).name}.\n\n${first.question}` });
-      render();
-    } else {
-      aiExamTurn();
+    const minutes = Number(minutesInput ? minutesInput.value : 10) === 5 ? 5 : 10;
+    const sections = Core.buildExamPanel(window.FLData, state, now(), 14).map(s => Object.assign(s, {
+      index: 0, round: 0, answers: [], transcript: [], results: [], summary: '',
+      startedAt: 0, endsAt: 0, endedAt: 0, timeUp: false, done: false
+    }));
+    if (!sections.length) {
+      toast('Keine Prüfungsfragen gefunden.');
+      return;
     }
+    exam = { mode, minutes, sections, current: 0, transcript: [], draft: '', loading: false, error: null, finished: false };
+    startExamClock();
+    startSection(0);
+  }
+
+  function examSay(section, text) {
+    const turn = { role: 'examiner', who: section.examiner, text };
+    section.transcript.push(turn);
+    exam.transcript.push(turn);
+  }
+
+  function startSection(i) {
+    const section = exam.sections[i];
+    exam.current = i;
+    section.startedAt = Date.now();
+    section.endsAt = section.startedAt + exam.minutes * 60000;
+    exam.transcript.push({ role: 'divider', text: `${section.examiner} · ${section.name} · ${exam.minutes} Minuten` });
+    if (exam.mode === 'ai') {
+      aiExamTurn();
+      return;
+    }
+    const first = questionById.get(section.ids[0]);
+    const hello = i === 0 ? 'Guten Tag, nehmen Sie bitte Platz.' : 'Guten Tag, ich übernehme jetzt.';
+    examSay(section, `${hello} ${section.intro}\n\n${examQuestionText(first)}`);
+    render();
+  }
+
+  function examQuestionText(q) {
+    return q.signLabel ? 'Was bedeutet dieses Verkehrszeichen? Erklären Sie Bedeutung, Ge- oder Verbote und das richtige Verhalten.' : q.question;
+  }
+
+  /** Prüfer fertig: nächster Prüfer oder Ende der Prüfung. */
+  function endSection(farewell) {
+    const section = examSection();
+    section.done = true;
+    section.endedAt = Date.now();
+    if (farewell) examSay(section, farewell);
+    if (exam.current + 1 < exam.sections.length) {
+      startSection(exam.current + 1);
+      return;
+    }
+    exam.finished = true;
+    stopExamClock();
+    render();
   }
 
   function finishExamQuestion(questionId, score, missing, comment) {
-    exam.results.push({ questionId, score, missing, comment: comment || '' });
+    const section = examSection();
+    section.results.push({ questionId, score, missing, comment: comment || '' });
     state = Core.recordAttempt(state, questionId, { score, source: 'exam', missed: missing }, now());
     saveState();
   }
 
   function localExamTurn(answer) {
-    const q = questionById.get(exam.ids[exam.index]);
-    exam.answers.push(answer);
-    const evaluation = Core.evaluateExamAnswers(q, exam.answers);
+    const section = examSection();
+    const q = questionById.get(section.ids[section.index]);
+    section.answers.push(answer);
+    const evaluation = Core.evaluateExamAnswers(q, section.answers);
+    const timeUp = remainingMs(section) === 0;
     const maxRounds = evaluation.score < 0.6 ? 2 : 1;
 
-    if (exam.round < maxRounds) {
-      const follow = Core.examinerFollowUp(q, evaluation, exam.round);
-      exam.round += 1;
+    if (!timeUp && section.round < maxRounds) {
+      const follow = Core.examinerFollowUp(q, evaluation, section.round);
+      section.round += 1;
       if (follow) {
-        exam.transcript.push({ role: 'examiner', text: follow });
+        examSay(section, follow);
         return;
       }
     }
 
     finishExamQuestion(q.id, evaluation.score, evaluation.missing);
-    exam.index += 1;
-    exam.round = 0;
-    exam.answers = [];
+    section.index += 1;
+    section.round = 0;
+    section.answers = [];
 
-    if (exam.index >= exam.ids.length) {
-      exam.finished = true;
-      exam.transcript.push({ role: 'examiner', text: 'Vielen Dank, damit sind wir am Ende der Prüfung.' });
+    if (timeUp || section.index >= section.ids.length) {
+      endSection(timeUp ? 'Danke, meine Zeit ist um.' : 'Danke, ich habe keine weiteren Fragen.');
       return;
     }
-    const next = questionById.get(exam.ids[exam.index]);
-    exam.transcript.push({ role: 'examiner', text: `Danke. Kommen wir zum Fach ${subjectById.get(next.subject).name}.\n\n${next.question}` });
+    examSay(section, `Danke. Nächste Frage:\n\n${examQuestionText(questionById.get(section.ids[section.index]))}`);
   }
 
-  async function aiExamTurn() {
+  /** Nach Ablauf der Zeit ohne weitere Antwort weiter zum nächsten Prüfer. */
+  function nextExamSection() {
+    stopDictation();
+    const section = examSection();
+    if (exam.mode === 'ai') {
+      // Eine angefangene Frage bewertet der KI-Prüfer noch und gibt seine Einschätzung.
+      if (section.transcript.some(t => t.role === 'candidate')) {
+        aiExamTurn(true);
+        return;
+      }
+      endSection();
+      return;
+    }
+    if (section.answers.length) {
+      const q = questionById.get(section.ids[section.index]);
+      const evaluation = Core.evaluateExamAnswers(q, section.answers);
+      finishExamQuestion(q.id, evaluation.score, evaluation.missing);
+      section.answers = [];
+    }
+    endSection('Danke, meine Zeit ist um.');
+  }
+
+  async function aiExamTurn(forceTimeUp) {
     const current = exam;
+    const section = examSection();
+    const timeUp = Boolean(forceTimeUp) || remainingMs(section) === 0;
     current.loading = true;
     current.error = null;
     render();
     try {
-      const reply = await aiExamine(current.ids, current.transcript);
+      const ids = section.ids.slice(0, MAX_AI_SECTION_QUESTIONS);
+      const reply = await aiExamine(ids, section.transcript, { panel: section.id, minutes: current.minutes, first: current.current === 0, timeUp });
+      if (exam !== current) return;
       if (reply.assessment) {
-        const qid = current.ids.includes(reply.assessment.questionId)
+        const qid = ids.includes(reply.assessment.questionId)
           ? reply.assessment.questionId
-          : current.ids[Math.min(current.results.length, current.ids.length - 1)];
-        if (!current.results.some(r => r.questionId === qid)) {
+          : ids[Math.min(section.results.length, ids.length - 1)];
+        if (!section.results.some(r => r.questionId === qid)) {
           finishExamQuestion(qid, reply.assessment.score, reply.assessment.missing, reply.assessment.comment);
         }
       }
-      if (reply.message) current.transcript.push({ role: 'examiner', text: reply.message });
-      if (reply.finished) {
-        current.finished = true;
-        current.summary = reply.summary;
+      if (reply.message) examSay(section, reply.message);
+      current.loading = false;
+      if (reply.finished || timeUp) {
+        section.summary = reply.summary;
+        endSection();
+        return;
       }
     } catch (err) {
       current.error = err.message;
-    } finally {
-      current.loading = false;
-      if (exam === current) render();
     }
+    current.loading = false;
+    if (exam === current) render();
   }
 
   function sendExamAnswer() {
@@ -1745,7 +1901,10 @@
       toast('Bitte geben Sie eine Antwort ein.');
       return;
     }
-    exam.transcript.push({ role: 'candidate', text: answer });
+    const section = examSection();
+    const turn = { role: 'candidate', text: answer };
+    section.transcript.push(turn);
+    exam.transcript.push(turn);
     exam.draft = '';
     if (exam.mode === 'ai') {
       aiExamTurn();
@@ -1981,12 +2140,19 @@
     'exam-start': startExam,
     'exam-send': () => stopDictation(sendExamAnswer),
     'exam-retry': () => aiExamTurn(),
+    'exam-next-section': () => nextExamSection(),
     'exam-abort': () => {
-      if (exam.results.length === 0) exam = null;
-      else exam.finished = true;
+      stopExamClock();
+      if (examResults().length === 0) exam = null;
+      else {
+        const section = examSection();
+        if (section && !section.done) section.endedAt = Date.now();
+        exam.finished = true;
+      }
       render();
     },
     'exam-new': () => {
+      stopExamClock();
       exam = null;
       render();
     },
@@ -2032,6 +2198,7 @@
       state = Core.createState();
       saveState();
       practice = null;
+      stopExamClock();
       exam = null;
       backupCode = null;
       toast('Fortschritt zurückgesetzt.');

@@ -128,14 +128,14 @@
    * history: [{ role: 'examiner' | 'candidate', text }]
    * Die Prüfung startet mit einer leeren Historie; der Prüfer eröffnet dann.
    */
-  function buildExaminerRequest(questions, history, model) {
+  function buildExaminerRequest(questions, history, model, options) {
     return Object.assign(baseParams(model), {
       system: Prompts.EXAMINER_SYSTEM,
       output_config: {
         effort: 'low',
         format: { type: 'json_schema', schema: EXAMINER_SCHEMA }
       },
-      messages: Prompts.examinerMessages(questions, history)
+      messages: Prompts.examinerMessages(questions, history, undefined, options)
     });
   }
 
@@ -207,8 +207,8 @@
         return Object.assign(Prompts.normalizeEvaluation(parseStructured(response)), { model: response.model });
       },
 
-      async examine(questions, history) {
-        const response = await client.beta.messages.create(buildExaminerRequest(questions, history, model));
+      async examine(questions, history, options) {
+        const response = await client.beta.messages.create(buildExaminerRequest(questions, history, model, options));
         return Prompts.normalizeExaminerTurn(parseStructured(response));
       },
 

@@ -63,6 +63,19 @@ function runTests() {
     assert.ok(msgs[2].content.includes('A') && msgs[2].content.includes('B'));
   }));
 
+  results.push(test('examiner role and time-up note for the three-examiner exam', () => {
+    const role = { examiner: 'Techniker', name: 'Technik', minutes: 10, first: false };
+    const plan = Prompts.examinerPlan([plain], role);
+    assert.ok(plan.includes('Deine Rolle: Techniker') && plan.includes('10 Minuten') && plan.includes('stelle dich kurz vor'));
+    const asked = Prompts.examinerMessages([plain], [{ role: 'examiner', text: 'Frage' }], 'LEAD', Object.assign({ timeUp: true }, role));
+    assert.ok(asked[asked.length - 1].content.includes('Prüfungszeit ist abgelaufen'));
+    const answered = Prompts.examinerMessages([plain], [{ role: 'examiner', text: 'Frage' }, { role: 'candidate', text: 'Antwort' }], 'LEAD', { timeUp: true });
+    assert.strictEqual(answered[answered.length - 1].role, 'user');
+    assert.ok(answered[answered.length - 1].content.includes('<pruefling>Antwort</pruefling>') && answered[answered.length - 1].content.includes('Prüfungszeit ist abgelaufen'));
+    const normal = Prompts.examinerMessages([plain], [{ role: 'examiner', text: 'Frage' }, { role: 'candidate', text: 'Antwort' }], 'LEAD');
+    assert.ok(!normal[normal.length - 1].content.includes('abgelaufen'));
+  }));
+
   results.push(test('normalizers clamp scores and drop malformed fields', () => {
     const ev = Prompts.normalizeEvaluation({ score: '1.4', covered: ['x', 3], errors: 'nope' });
     assert.strictEqual(ev.score, 1);

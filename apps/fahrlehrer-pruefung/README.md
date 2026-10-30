@@ -15,7 +15,7 @@ braucht es kein Framework, keinen Build-Schritt und keine externen Abhängigkeit
 | Verkehrszeichen-Training | Alle 217 Zeichen aus StVO Anlage 1 bis 4 (216 mit Originalabbildung, nach Gruppen trainierbar): Zeichen sehen, Antwort einsprechen oder tippen, Rückmeldung zu „richtig erwähnt“, „falsch“ und „hat gefehlt“ |
 | Üben | Frage erst frei beantworten (tippen oder einsprechen), danach Schnellbewertung, Erklärung in einfacher Sprache, Praxisbeispiel, Musterantwort und mögliche Nachfragen |
 | Heute | Tagesplan aus fälligen Wiederholungen (Leitner-System), Schwächen und neuen Themen |
-| Prüfung | Simulation der mündlichen Prüfung mit Nachfragen, wahlweise mit Trainings-Prüfer (offline) oder KI-Prüfer |
+| Prüfung | Mündliche Prüfung wie in echt: drei Prüfer nacheinander – Rechtler (Verkehrszeichen, Recht, Verkehrsverhalten), Pädagoge (Pädagogik, Fahrlehrerwesen), Techniker – mit je 10 Minuten (Uhr oben rechts, wahlweise 5 Minuten als Kurztraining). Ist die Zeit um, kommt keine neue Frage mehr; die laufende Antwort darf noch abgegeben werden, dann übernimmt der nächste Prüfer. Wahlweise Trainings-Prüfer (offline) oder KI-Prüfer mit eigener Rolle und Einschätzung je Prüfer |
 | Schriftliche Prüfung | Original-Prüfungen zum Auswählen: 5-Stunden-Timer zum selbst Starten, links die Aufgaben, rechts kariertes A4-Papier; Schreiben und Markieren mit Apple Pencil (Kugelschreiber, Textmarker, Radierer, Rückgängig), Zwei-Finger-Zoom, Abgabe mit Noten je Fach durch Claude |
 | Analyse | Schwache Themen, häufig vergessene Kernpunkte, Fächervergleich, Trend und konkrete Empfehlungen |
 

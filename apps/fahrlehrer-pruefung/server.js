@@ -17,6 +17,7 @@ const path = require('path');
 const data = require('./public/data/questions.js');
 const written = require('./public/data/questions-schriftlich.js');
 const { createAiService, loadDefaultClient, AiResponseError, MODEL } = require('./lib/ai-examiner');
+const { EXAM_PANEL } = require('./public/core/learning-core.js');
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const MAX_BODY_BYTES = 64 * 1024;
@@ -111,6 +112,20 @@ function createAppServer(options) {
     ? opts.aiService
     : (client => (client ? createAiService(client) : null))(loadDefaultClient());
 
+  // Prüferrolle nur aus der festen Liste (Rechtler, Pädagoge, Techniker), Minuten begrenzt.
+  function examinerOptions(body) {
+    const section = EXAM_PANEL.find(s => s.id === body.panel);
+    if (!section) return undefined;
+    const minutes = Math.round(Number(body.minutes));
+    return {
+      examiner: section.examiner,
+      name: section.name,
+      minutes: minutes >= 1 && minutes <= 60 ? minutes : 10,
+      first: body.first !== false,
+      timeUp: body.timeUp === true
+    };
+  }
+
   // Kurzantwort der Suche: nur aus den Musterantworten der übergebenen Fragen.
   async function searchAnswer(res, body) {
     const query = typeof body.query === 'string' ? body.query.trim() : '';
@@ -172,7 +187,7 @@ function createAppServer(options) {
         sendJson(res, 400, { error: 'Keine gültigen Prüfungsfragen übergeben.' });
         return;
       }
-      sendJson(res, 200, await ai.examine(questions, history));
+      sendJson(res, 200, await ai.examine(questions, history, examinerOptions(body)));
       return;
     }
 

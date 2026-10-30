@@ -28,15 +28,16 @@
   const EVALUATION_FORMAT = 'Antworte ausschließlich mit einem JSON-Objekt dieser Form: {"score": 0.0-1.0, "covered": [string], "missing": [string], "errors": [string], "feedback": string, "tip": string}';
 
   const EXAMINER_SYSTEM = [
-    'Du bist Vorsitzende/r des Prüfungsausschusses in einer mündlichen Fachkundeprüfung für Fahrlehreranwärter (Klasse BE) in Deutschland.',
+    'Du bist Mitglied des Prüfungsausschusses in einer mündlichen Fachkundeprüfung für Fahrlehreranwärter (Klasse BE) in Deutschland.',
+    'Der Prüfungsplan nennt dein Prüfungsgebiet und deine Rolle (Rechtler, Pädagoge oder Techniker) und wie viele Minuten du hast. Prüfe nur dein Gebiet.',
     'Führe eine realistische, faire mündliche Prüfung auf Deutsch. Sprich den Prüfling mit „Sie“ an. Antworten können per Spracherkennung entstanden sein.',
-    'Ablauf: Stelle die vorgegebenen Prüfungsfragen nacheinander in der angegebenen Reihenfolge. Hake nach jeder Antwort ein- bis zweimal gezielt nach,',
+    'Ablauf: Stelle die vorgegebenen Prüfungsfragen nacheinander in der angegebenen Reihenfolge – es müssen nicht alle drankommen, die Prüfungszeit begrenzt das Gespräch. Hake nach jeder Antwort ein- bis zweimal gezielt nach,',
     'wenn Kernpunkte fehlen, etwas unklar oder falsch ist oder um Praxistransfer zu prüfen (z. B. „Wie würden Sie das einem Fahrschüler erklären?“).',
     'Verrate keine Musterlösung während der Prüfung. Gib höchstens einen kleinen Denkanstoß, wenn der Prüfling feststeckt.',
     'Ist eine Frage ein Verkehrszeichen, sieht der Prüfling nur die Grafik: Nenne den Namen des Zeichens nicht, frage z. B. „Was bedeutet dieses Zeichen?“.',
     'Wenn eine Frage abgeschlossen ist, setze assessment.completed = true, trage die questionId ein und bewerte die Gesamtleistung zu dieser Frage (score 0..1, fehlende Kernpunkte, kurzer Kommentar inkl. fachlicher Fehler).',
     'Leite dann in message direkt zur nächsten Frage über. Andernfalls assessment.completed = false, questionId = "", score = 0, missing = [], comment = "".',
-    'Nach der letzten Frage: finished = true und summary mit einer ehrlichen Gesamteinschätzung (Stärken, Lücken, Empfehlung). Sonst finished = false, summary = "".',
+    'Nach der letzten Frage oder wenn dir mitgeteilt wird, dass die Zeit abgelaufen ist: finished = true und summary mit einer ehrlichen Einschätzung zu deinem Prüfungsgebiet (Stärken, Lücken, Empfehlung). Sonst finished = false, summary = "".',
     'Halte deine Beiträge kurz wie in einer echten Prüfung (1–4 Sätze).'
   ].join('\n');
 
@@ -96,19 +97,28 @@
     return `${EVALUATION_SYSTEM}\n\n${evaluationUserText(question, answer)}\n\n${EVALUATION_FORMAT}`;
   }
 
-  function examinerPlan(questions) {
+  /**
+   * options (Prüferrolle): { examiner: 'Rechtler', name: 'Recht', minutes: 10, first: true|false }
+   */
+  function examinerPlan(questions, options) {
+    const o = options || {};
     const plan = questions.map((q, i) => `### Prüfungsfrage ${i + 1}\n${questionBrief(q)}`).join('\n\n');
-    return `Prüfungsplan (nur für dich als Prüfer sichtbar):\n\n${plan}\n\nBeginne jetzt die Prüfung mit einer kurzen Begrüßung und der ersten Frage.`;
+    const role = o.examiner
+      ? `Deine Rolle: ${o.examiner} – du prüfst das Gebiet ${o.name || o.examiner}${o.minutes ? ` und hast dafür ${o.minutes} Minuten` : ''}. ${o.first === false ? 'Ein anderer Prüfer hat vor dir geprüft; stelle dich kurz vor.' : 'Du eröffnest die Prüfung.'}\n\n`
+      : '';
+    return `${role}Prüfungsplan (nur für dich als Prüfer sichtbar):\n\n${plan}\n\nBeginne jetzt mit einer kurzen Begrüßung und der ersten Frage.`;
   }
+
+  const TIME_UP_NOTE = '(Hinweis an den Prüfer, für den Prüfling unsichtbar: Die Prüfungszeit ist abgelaufen. Stelle keine weitere Frage und keine Nachfrage. Hat der Prüfling auf die laufende Frage geantwortet, bewerte sie jetzt abschließend (assessment.completed = true); hat er noch nicht geantwortet, setze assessment.completed = false. Verabschiede dich in message mit einem kurzen Satz und setze finished = true mit summary.)';
 
   /**
    * Baut abwechselnde Nachrichten (user/assistant) aus dem Gesprächsverlauf.
    * history: [{ role: 'examiner' | 'candidate', text }]
    * Die Liste beginnt und endet immer mit einer user-Nachricht.
    */
-  function examinerMessages(questions, history, leadText) {
+  function examinerMessages(questions, history, leadText, options) {
     const turns = (history || []).slice(-MAX_TURNS);
-    const messages = [{ role: 'user', content: leadText || examinerPlan(questions) }];
+    const messages = [{ role: 'user', content: leadText || examinerPlan(questions, options) }];
     for (const turn of turns) {
       const role = turn.role === 'candidate' ? 'user' : 'assistant';
       const content = role === 'user'
@@ -118,8 +128,11 @@
       if (prev.role === role) prev.content += `\n\n${content}`;
       else messages.push({ role, content });
     }
+    const timeUp = Boolean(options && options.timeUp);
     if (messages[messages.length - 1].role === 'assistant') {
-      messages.push({ role: 'user', content: '(Der Prüfling wartet auf Ihre nächste Frage.)' });
+      messages.push({ role: 'user', content: timeUp ? TIME_UP_NOTE : '(Der Prüfling wartet auf Ihre nächste Frage.)' });
+    } else if (timeUp) {
+      messages[messages.length - 1].content += `\n\n${TIME_UP_NOTE}`;
     }
     return messages;
   }

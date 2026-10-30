@@ -17,8 +17,8 @@ function buildEvaluationRequest(question, answer) {
   return Requests.buildEvaluationRequest(question, answer, MODEL);
 }
 
-function buildExaminerRequest(questions, history) {
-  return Requests.buildExaminerRequest(questions, history, MODEL);
+function buildExaminerRequest(questions, history, options) {
+  return Requests.buildExaminerRequest(questions, history, MODEL, options);
 }
 
 function createAiService(client) {
