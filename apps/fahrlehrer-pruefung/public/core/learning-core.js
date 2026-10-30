@@ -650,13 +650,83 @@
     }).filter(section => section.ids.length > 0);
   }
 
+  // ------------------------------------------------------------------ Teilfragen
+
+  const LETTERS = 'abcdefgh';
+
+  /** "a) … b) … c) …" in einer Zeile auf eigene Zeilen verteilen (nur in richtiger Reihenfolge). */
+  function splitInlineLetters(line) {
+    if (!/(^|\s)a\)\s/.test(line)) return [line];
+    const out = [];
+    let rest = line;
+    for (let i = 1; i < LETTERS.length; i++) {
+      const m = rest.match(new RegExp(`\\s${LETTERS[i]}\\)\\s`));
+      if (!m) break;
+      out.push(rest.slice(0, m.index).trim());
+      rest = rest.slice(m.index).trim();
+    }
+    out.push(rest);
+    return out.filter(Boolean);
+  }
+
+  /**
+   * Mehrteilige Prüfungsfragen in einzelne Fragen zerlegen, damit der Prüfer
+   * wie in echt eine nach der anderen stellt. Erkennt Blöcke ("A)", "B:",
+   * "1.", "2.") und Teilaufgaben ("a)", "b)"). Der Einleitungstext kommt zur
+   * ersten Teilfrage. Einteilige Fragen bleiben unverändert.
+   */
+  function splitQuestionParts(text) {
+    const raw = String(text || '').trim();
+    const lines = raw.split('\n').map(l => l.trim()).filter(Boolean).flatMap(splitInlineLetters);
+    const blockRe = /^(?:([A-D])[):]|(\d)\.)\s+/;
+    const partRe = /^([a-h])\)\s+/;
+    const blockCount = lines.filter(l => blockRe.test(l)).length;
+    const partCount = lines.filter(l => partRe.test(l)).length;
+    if (blockCount < 2 && partCount < 2) return [raw];
+    const blocks = [];
+    const intro = [];
+    let block = null;
+    for (const line of lines) {
+      if (blockCount >= 2 && blockRe.test(line)) {
+        block = { head: [line], parts: [] };
+        blocks.push(block);
+      } else if (partRe.test(line)) {
+        if (!block) {
+          block = { head: [], parts: [] };
+          blocks.push(block);
+        }
+        block.parts.push([line]);
+      } else if (block && block.parts.length) {
+        block.parts[block.parts.length - 1].push(line);
+      } else if (block) {
+        block.head.push(line);
+      } else {
+        intro.push(line);
+      }
+    }
+    const parts = [];
+    for (const b of blocks) {
+      const head = b.head.join('\n');
+      if (!b.parts.length) {
+        parts.push(head);
+        continue;
+      }
+      b.parts.forEach((p, i) => parts.push([i === 0 ? head : '', p.join('\n')].filter(Boolean).join('\n')));
+    }
+    if (!parts.length) return [raw];
+    if (intro.length) parts[0] = `${intro.join('\n')}\n${parts[0]}`;
+    return parts;
+  }
+
   /** Nachfrage des lokalen Prüfers – greift fehlende Punkte auf. */
   function examinerFollowUp(question, evaluation, round) {
     if (evaluation.score >= 0.85 && round === 0) {
       return question.followUps[0] || null;
     }
-    if (evaluation.missing.length > 0 && evaluation.score < 0.5) {
-      return `Das reicht mir noch nicht ganz. Gehen Sie bitte genauer auf folgenden Aspekt ein: ${evaluation.missing[0]}.`;
+    if (evaluation.missing.length > round && evaluation.score < 0.5) {
+      // Jede Nachfrage greift einen anderen fehlenden Punkt auf – nie zweimal dieselbe.
+      const point = evaluation.missing[round];
+      return `${round === 0 ? 'Das reicht mir noch nicht ganz.' : 'Noch ein Punkt:'} Gehen Sie bitte genauer auf folgenden Aspekt ein: ${point}.`;
     }
     return question.followUps[round % question.followUps.length] || null;
   }
@@ -702,6 +772,7 @@
     EXAM_PANEL,
     examPanelFor,
     buildExamPanel,
+    splitQuestionParts,
     examinerFollowUp,
     evaluateExamAnswers,
     examVerdict

@@ -277,12 +277,14 @@
       question: 'Welche Sonderfahrten gibt es? Nennen Sie die vorgeschriebene Anzahl und beschreiben Sie sie.',
       explanation: 'Für Klasse B sind zwölf besondere Ausbildungsfahrten vorgeschrieben: Landstraße, Autobahn und Dunkelheit.',
       example: 'Planen Sie die Dunkelfahrten im Sommer früh am Abend nicht – es ist noch hell. Besser im Herbst oder spät abends.',
-      modelAnswer: 'Bei Ersterwerb der Klasse B sind zwölf besondere Ausbildungsfahrten à 45 Minuten vorgeschrieben: fünf auf Bundes- oder Landstraßen (Überlandfahrten, z. B. Kurven, Überholen, Wildwechsel, Geschwindigkeit anpassen), vier auf Autobahnen oder Kraftfahrstraßen (Einfädeln, Fahrstreifenwechsel, hohe Geschwindigkeit, Abstand) und drei bei Dämmerung oder Dunkelheit (Beleuchtung, Blendung, Sichtweite). Sie finden erst statt, wenn die Grundausbildung sicher sitzt, und werden in der Ausbildungsdokumentation nachgewiesen.',
+      modelAnswer: 'Bei Ersterwerb der Klasse B sind zwölf besondere Ausbildungsfahrten à 45 Minuten vorgeschrieben: fünf auf Bundes- oder Landstraßen (Überlandfahrten, z. B. Kurven, Überholen, Wildwechsel, Geschwindigkeit anpassen), davon eine Fahrt von mindestens zwei Stunden zu je 45 Minuten am Stück; vier auf Autobahnen oder Kraftfahrstraßen (Einfädeln, Fahrstreifenwechsel, hohe Geschwindigkeit, Abstand), davon ebenfalls eine Fahrt von mindestens zwei Stunden, und soweit möglich mindestens eine Stunde auf Strecken ohne Geschwindigkeitsbegrenzung oder mit einer Begrenzung nicht unter 120 km/h; und drei bei Dämmerung oder Dunkelheit (Beleuchtung, Blendung, Sichtweite), mindestens zur Hälfte auf Autobahnen, Bundes- oder Landstraßen (Anlage 4 FahrschAusbO). Sie finden erst statt, wenn die Grundausbildung sicher sitzt, und werden in der Ausbildungsdokumentation nachgewiesen.',
       keyPoints: [
         { label: '12 Fahrten à 45 Minuten', keywords: ['12', 'zwölf', '45'] },
         { label: '5 Überland', keywords: ['überland', 'landstraße', 'bundesstraße'] },
         { label: '4 Autobahn', keywords: ['autobahn'] },
         { label: '3 Dunkelheit', keywords: ['dunkel', 'nacht', 'dämmerung'] },
+        { label: 'Je eine Überland- und Autobahnfahrt mind. 2 × 45 Minuten am Stück', keywords: ['zwei stunden', '2 stunden', 'doppelstunde', '90 minuten', '2 × 45', '2 x 45'] },
+        { label: 'Autobahn: möglichst 1 Stunde ohne Tempolimit bzw. nicht unter 120 km/h', keywords: ['120', 'ohne tempolimit', 'ohne geschwindigkeitsbegrenzung'] },
         { label: 'Inhalte beschrieben', keywords: ['kurven', 'einfädeln', 'blendung', 'überholen', 'beleuchtung'] },
         { label: 'Nach Grundausbildung', keywords: ['grundausbildung', 'nach der', 'erst'] }
       ],
@@ -427,7 +429,7 @@
       question: 'Wie viele Theorieunterrichte und wie viele praktische Fahrstunden sind für den Erwerb der Klasse B vorgeschrieben?',
       explanation: 'Theorie: 14 Doppelstunden. Praxis: keine Mindestzahl an normalen Fahrstunden, aber 12 Sonderfahrten sind Pflicht.',
       example: 'Ein Kunde fragt: „Wie viele Fahrstunden brauche ich mindestens?“ – Gesetzlich nur die 12 Sonderfahrten, die tatsächliche Zahl hängt vom Lernfortschritt ab.',
-      modelAnswer: 'Theorie: Bei Ersterwerb der Klasse B 14 Doppelstunden à 90 Minuten, davon 12 Doppelstunden Grundstoff und 2 Doppelstunden klassenspezifischer Zusatzstoff. Praxis: Eine Mindestzahl an Übungsstunden ist gesetzlich nicht vorgeschrieben; die Ausbildung richtet sich nach dem Lernfortschritt. Vorgeschrieben sind aber 12 besondere Ausbildungsfahrten à 45 Minuten: 5 Überland, 4 Autobahn, 3 bei Dämmerung oder Dunkelheit.',
+      modelAnswer: 'Theorie: Bei Ersterwerb der Klasse B 14 Doppelstunden à 90 Minuten, davon 12 Doppelstunden Grundstoff und 2 Doppelstunden klassenspezifischer Zusatzstoff. Praxis: Eine Mindestzahl an Übungsstunden ist gesetzlich nicht vorgeschrieben; die Ausbildung richtet sich nach dem Lernfortschritt. Vorgeschrieben sind aber 12 besondere Ausbildungsfahrten à 45 Minuten: 5 Überland und 4 Autobahn (davon jeweils eine Fahrt von mindestens zwei Stunden; auf der Autobahn möglichst eine Stunde ohne Tempolimit bzw. nicht unter 120 km/h), 3 bei Dämmerung oder Dunkelheit.',
       keyPoints: [
         { label: '14 Doppelstunden Theorie', keywords: ['14'] },
         { label: '12 Grundstoff + 2 Zusatzstoff', keywords: ['grundstoff', 'zusatzstoff'] },

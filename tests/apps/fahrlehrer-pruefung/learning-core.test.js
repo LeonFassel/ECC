@@ -390,6 +390,22 @@ function runTests() {
     if (recht.some(x => x.subject === 'zeichen')) assert.ok(recht[0].subject !== 'zeichen', 'starts with a law question');
   }));
 
+  results.push(test('multi-part questions are asked one part at a time', () => {
+    assert.deepStrictEqual(Core.splitQuestionParts('Was ist Aquaplaning?'), ['Was ist Aquaplaning?']);
+    assert.deepStrictEqual(Core.splitQuestionParts('Einleitung.\na) Erste Frage?\nb) Zweite Frage?\nmit Zusatz'),
+      ['Einleitung.\na) Erste Frage?', 'b) Zweite Frage?\nmit Zusatz']);
+    assert.deepStrictEqual(Core.splitQuestionParts('a) Wann? b) Wie? c) Warum?'), ['a) Wann?', 'b) Wie?', 'c) Warum?']);
+    assert.deepStrictEqual(Core.splitQuestionParts('A: Block eins?\nB: Block zwei\na) Teil?\nb) Teil zwei?'),
+      ['A: Block eins?', 'B: Block zwei\na) Teil?', 'b) Teil zwei?']);
+    assert.deepStrictEqual(Core.splitQuestionParts('1. Erstens?\n2. Zweitens?'), ['1. Erstens?', '2. Zweitens?']);
+    // Ein einzelnes "a)" oder eine Zahl im Satz ist keine Gliederung.
+    assert.deepStrictEqual(Core.splitQuestionParts('Nennen Sie a) ein Beispiel.'), ['Nennen Sie a) ein Beispiel.']);
+    for (const item of data.questions) {
+      const parts = Core.splitQuestionParts(item.question);
+      assert.strictEqual(parts.join(' ').replace(/\s+/g, ''), item.question.replace(/\s+/g, ''), `${item.id}: no text lost`);
+    }
+  }));
+
   results.push(test('examinerFollowUp probes missing points on weak answers', () => {
     const item = q('verhalten-02');
     const weak = Core.evaluateAnswer(item, 'Man fährt zur Seite.');

@@ -63,6 +63,12 @@ function runTests() {
     assert.ok(msgs[2].content.includes('A') && msgs[2].content.includes('B'));
   }));
 
+  results.push(test('examiner asks one question at a time and does not punish correct details', () => {
+    assert.ok(Prompts.EXAMINER_SYSTEM.includes('höchstens eine Frage'));
+    assert.ok(Prompts.EXAMINER_SYSTEM.includes('kein Fehler'));
+    assert.ok(Prompts.EVALUATION_SYSTEM.includes('sicher falsch'));
+  }));
+
   results.push(test('examiner role and time-up note for the three-examiner exam', () => {
     const role = { examiner: 'Techniker', name: 'Technik', minutes: 10, first: false };
     const plan = Prompts.examinerPlan([plain], role);

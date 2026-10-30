@@ -841,12 +841,14 @@
       question: 'Welche besonderen Ausbildungsfahrten (Sonderfahrten) sind für die Klasse B vorgeschrieben und wie planen Sie sie sinnvoll?',
       explanation: 'Neben den normalen Übungsstunden gibt es Pflichtfahrten auf Landstraße, Autobahn und bei Dunkelheit. Sie sollen erst kommen, wenn der Schüler die Grundlagen sicher beherrscht.',
       example: 'Planen Sie die Nachtfahrten in den Herbst- und Wintermonaten früh ein, im Sommer wird es erst spät dunkel – das ist eine typische Organisationsfrage in der Prüfung.',
-      modelAnswer: 'Nach der Fahrschüler-Ausbildungsordnung sind für die Klasse B bei Ersterwerb zwölf besondere Ausbildungsfahrten à 45 Minuten vorgeschrieben: fünf Fahrten auf Bundes- oder Landstraßen (Überlandfahrten), vier Fahrten auf Autobahnen oder Kraftfahrstraßen und drei Fahrten bei Dämmerung oder Dunkelheit. Sie bauen auf der Grundausbildung auf und werden erst durchgeführt, wenn der Schüler die Grundfertigkeiten sicher beherrscht. Ich plane sie im Ausbildungsplan, achte bei den Dunkelfahrten auf die Jahreszeit und lege für jede Fahrt konkrete Lernziele fest. Alle Fahrten werden in der Ausbildungsdokumentation nachgewiesen.',
+      modelAnswer: 'Nach der Fahrschüler-Ausbildungsordnung sind für die Klasse B bei Ersterwerb zwölf besondere Ausbildungsfahrten à 45 Minuten vorgeschrieben: fünf Fahrten auf Bundes- oder Landstraßen (Überlandfahrten), davon eine Fahrt von mindestens zwei Stunden zu je 45 Minuten am Stück; vier Fahrten auf Autobahnen oder Kraftfahrstraßen, davon ebenfalls eine Fahrt von mindestens zwei Stunden, und soweit möglich mindestens eine Stunde auf Strecken ohne Geschwindigkeitsbegrenzung oder mit einer Begrenzung nicht unter 120 km/h; sowie drei Fahrten bei Dämmerung oder Dunkelheit, mindestens zur Hälfte auf Autobahnen, Bundes- oder Landstraßen (Anlage 4 FahrschAusbO). Sie bauen auf der Grundausbildung auf und werden erst durchgeführt, wenn der Schüler die Grundfertigkeiten sicher beherrscht. Ich plane sie im Ausbildungsplan, achte bei den Dunkelfahrten auf die Jahreszeit und lege für jede Fahrt konkrete Lernziele fest. Alle Fahrten werden in der Ausbildungsdokumentation nachgewiesen.',
       keyPoints: [
         { label: '12 Sonderfahrten à 45 Min.', keywords: ['12', 'zwölf', '45 minuten'] },
         { label: '5 Überlandfahrten', keywords: ['überland', 'landstraße', 'bundesstraße'] },
         { label: '4 Autobahnfahrten', keywords: ['autobahn', 'kraftfahrstraße'] },
         { label: '3 Fahrten bei Dunkelheit', keywords: ['dunkel', 'nacht', 'dämmerung'] },
+        { label: 'Je eine Überland- und Autobahnfahrt mind. 2 × 45 Minuten am Stück', keywords: ['zwei stunden', '2 stunden', 'doppelstunde', '90 minuten', '2 × 45', '2 x 45'] },
+        { label: 'Autobahn: möglichst 1 Stunde ohne Tempolimit bzw. nicht unter 120 km/h', keywords: ['120', 'ohne tempolimit', 'ohne geschwindigkeitsbegrenzung'] },
         { label: 'Erst nach Grundausbildung', keywords: ['grundausbildung', 'grundfertigkeit', 'nach der', 'erst wenn'] },
         { label: 'Dokumentation', keywords: ['dokument', 'nachweis', 'ausbildungsnachweis'] }
       ],

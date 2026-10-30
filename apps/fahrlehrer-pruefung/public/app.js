@@ -1751,7 +1751,7 @@
     const mode = modeInput && modeInput.value === 'ai' && aiStatus.ai ? 'ai' : 'local';
     const minutes = Number(minutesInput ? minutesInput.value : 10) === 5 ? 5 : 10;
     const sections = Core.buildExamPanel(window.FLData, state, now(), 14).map(s => Object.assign(s, {
-      index: 0, round: 0, answers: [], transcript: [], results: [], summary: '',
+      index: 0, part: 0, round: 0, answers: [], transcript: [], results: [], summary: '',
       startedAt: 0, endsAt: 0, endedAt: 0, timeUp: false, done: false
     }));
     if (!sections.length) {
@@ -1785,9 +1785,18 @@
     render();
   }
 
-  function examQuestionText(q) {
-    return q.signLabel ? 'Was bedeutet dieses Verkehrszeichen? Erklären Sie Bedeutung, Ge- oder Verbote und das richtige Verhalten.' : q.question;
+  /** Teilfragen einer Prüfungsfrage – der Prüfer stellt sie nacheinander. */
+  function examParts(q) {
+    if (q.signLabel) return ['Was bedeutet dieses Verkehrszeichen? Erklären Sie Bedeutung, Ge- oder Verbote und das richtige Verhalten.'];
+    // Aufzählungszeichen ("a)", "B:", "2.") weglassen – der Prüfer fragt wie im Gespräch.
+    return Core.splitQuestionParts(q.question).map(p => p.replace(/^(?:[a-h]\)|[A-D][):]|\d\.)\s+/gm, ''));
   }
+
+  function examQuestionText(q) {
+    return examParts(q)[0];
+  }
+
+  const PART_LEADS = ['Gut. Nächster Punkt:', 'Danke. Dazu weiter:', 'In Ordnung. Und:'];
 
   /** Prüfer fertig: nächster Prüfer oder Ende der Prüfung. */
   function endSection(farewell) {
@@ -1817,6 +1826,13 @@
     section.answers.push(answer);
     const evaluation = Core.evaluateExamAnswers(q, section.answers);
     const timeUp = remainingMs(section) === 0;
+    const parts = examParts(q);
+    // Mehrteilige Frage: erst alle Teilfragen nacheinander, dann ggf. Nachfragen.
+    if (!timeUp && section.part < parts.length - 1) {
+      section.part += 1;
+      examSay(section, `${PART_LEADS[(section.part - 1) % PART_LEADS.length]} ${parts[section.part]}`);
+      return;
+    }
     const maxRounds = evaluation.score < 0.6 ? 2 : 1;
 
     if (!timeUp && section.round < maxRounds) {
@@ -1830,6 +1846,7 @@
 
     finishExamQuestion(q.id, evaluation.score, evaluation.missing);
     section.index += 1;
+    section.part = 0;
     section.round = 0;
     section.answers = [];
 
