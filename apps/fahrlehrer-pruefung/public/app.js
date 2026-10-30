@@ -422,20 +422,39 @@
       return;
     }
     stopDictation();
+    // base: Text im Feld außerhalb des Diktats; latest/consumed: erkannte Texte je Ergebnis bzw. der Teil davon,
+    // der schon übernommen (oder vom Nutzer bearbeitet/gelöscht) wurde und nicht wiederkommen darf.
+    const session = { target, recognition: null, base: draftOf(target).trim(), latest: [], consumed: [], stopping: false, started: false, done: false, then: null, restarts: [] };
+    dictation = session;
+    // Startet die Erkennung nicht (kein Mikrofonzugriff), nicht hängen bleiben: auf Tastatur-Diktat umschalten.
+    session.startTimer = setTimeout(() => {
+      if (session.started || session.done) return;
+      try { session.recognition.abort(); } catch (_err) { /* bereits beendet */ }
+      finishDictation(session);
+      useKeyboardDictation(target, 'Die Spracherkennung ist nicht gestartet. Bitte erneut auf „Antwort einsprechen“ tippen. ' + KEYBOARD_HINT);
+    }, START_TIMEOUT_MS);
+    if (listen(session)) refreshMicButtons();
+  }
+
+  /**
+   * Eine Erkennungsrunde. Safari und Chrome beenden die Erkennung nach einer Sprechpause von
+   * selbst – solange der Nutzer nicht auf „Aufnahme beenden“ tippt, hört die App dann einfach
+   * weiter zu, statt das Mikrofon auszuschalten.
+   */
+  function listen(session) {
+    const target = session.target;
     let recognition;
     try {
       recognition = new SpeechRec();
     } catch (_err) {
+      finishDictation(session);
       useKeyboardDictation(target, KEYBOARD_HINT, true);
-      return;
+      return false;
     }
+    session.recognition = recognition;
     recognition.lang = 'de-DE';
     recognition.continuous = true;
     recognition.interimResults = true;
-    // base: Text im Feld außerhalb des Diktats; latest/consumed: erkannte Texte je Ergebnis bzw. der Teil davon,
-    // der schon übernommen (oder vom Nutzer bearbeitet/gelöscht) wurde und nicht wiederkommen darf.
-    const session = { target, recognition, base: draftOf(target).trim(), latest: [], consumed: [], stopping: false, started: false, done: false, then: null };
-    dictation = session;
 
     const markStarted = () => {
       session.started = true;
@@ -443,17 +462,10 @@
     };
     recognition.onstart = markStarted;
     recognition.onaudiostart = markStarted;
-    // Startet die Erkennung nicht (kein Mikrofonzugriff), nicht hängen bleiben: auf Tastatur-Diktat umschalten.
-    session.startTimer = setTimeout(() => {
-      if (session.started || session.done) return;
-      try { recognition.abort(); } catch (_err) { /* bereits beendet */ }
-      finishDictation(session);
-      useKeyboardDictation(target, 'Die Spracherkennung ist nicht gestartet. Bitte erneut auf „Antwort einsprechen“ tippen. ' + KEYBOARD_HINT);
-    }, START_TIMEOUT_MS);
 
     recognition.onresult = event => {
       markStarted();
-      // Aus allen Ergebnissen der Sitzung neu zusammensetzen (Safari liefert oft ein einziges, wachsendes Ergebnis).
+      // Aus allen Ergebnissen der Runde neu zusammensetzen (Safari liefert oft ein einziges, wachsendes Ergebnis).
       const parts = [];
       for (let i = 0; i < event.results.length; i++) {
         const text = event.results[i][0].transcript;
@@ -468,17 +480,39 @@
         useKeyboardDictation(target, MIC_ERRORS[event.error], true);
         return;
       }
-      if (MIC_ERRORS[event.error]) toast(MIC_ERRORS[event.error]);
+      // Stille ist beim Weiterhören kein Fehler; andere Hinweise nur einmal zeigen.
+      if (event.error === 'no-speech' || event.error === 'aborted') return;
+      if (MIC_ERRORS[event.error] && !session.warned) {
+        session.warned = true;
+        toast(MIC_ERRORS[event.error]);
+      }
     };
-    recognition.onend = () => finishDictation(session);
+    recognition.onend = () => {
+      if (session.done || session.stopping || dictation !== session || !session.started || !keepListening(session)) {
+        finishDictation(session);
+        return;
+      }
+      // Bisher Erkanntes übernehmen und mit einer neuen Runde weiterhören.
+      session.base = draftOf(target).trim();
+      session.latest = [];
+      session.consumed = [];
+      if (!listen(session)) finishDictation(session);
+    };
     try {
       recognition.start();
     } catch (_err) {
       finishDictation(session);
       useKeyboardDictation(target, MIC_ERRORS['not-allowed'], true);
-      return;
+      return false;
     }
-    refreshMicButtons();
+    return true;
+  }
+
+  // Schutz vor Endlosschleifen: höchstens 5 Neustarts innerhalb von 10 Sekunden.
+  function keepListening(session) {
+    const now = Date.now();
+    session.restarts = session.restarts.filter(t => now - t < 10000).concat(now);
+    return session.restarts.length <= 5;
   }
 
   /** Beendet die Aufnahme; erkannte Wörter werden noch übernommen, dann folgt optional `then`. */
@@ -1708,24 +1742,43 @@
       </div>`;
   }
 
+  function formatGrade(value) {
+    return Number.isInteger(value) ? String(value) : value.toFixed(1).replace('.', ',');
+  }
+
   function renderExamResult() {
     const all = examResults();
-    const verdict = Core.examVerdict(all.map(r => r.score));
     const weak = all.filter(r => r.score < 0.6).map(r => r.questionId);
+    const grades = Core.oralExamGrades(exam.sections);
+    const byId = new Map(grades.parts.map(g => [g.id, g]));
+    const status = !grades.complete ? 'Abgebrochen – nicht alle Prüfer erreicht' : grades.passed ? 'Bestanden (Orientierung)' : 'Noch nicht bestanden (Orientierung)';
     return `
       <header class="page-head"><h1>Auswertung</h1><p>${exam.mode === 'ai' ? 'KI-Prüfer' : 'Trainings-Prüfer'} · ${exam.sections.length} Prüfer à ${exam.minutes} Minuten</p></header>
-      <div class="card">
-        <div class="kpi-label">Gesamtergebnis</div>
-        <div class="kpi-value">${pct(verdict.avg)}</div>
-        ${bar(verdict.avg, verdict.passed ? 'good' : 'bad')}
-        <p style="margin-top:10px"><strong>${esc(verdict.label)}</strong></p>
+      <div class="card section ws-result-head">
+        <div class="ws-grade-big ${grades.passed ? 'good' : 'bad'}">
+          <span>${grades.average === null ? '–' : `Ø ${esc(formatGrade(grades.average))}`}</span>
+          <small>${grades.average === null ? 'keine Note' : esc(Prompts.gradeLabel(grades.average))}</small>
+        </div>
+        <div>
+          <div class="kpi-label">Gesamtnote</div>
+          <p><span class="chip ${grades.passed ? 'sicher' : 'schwach'}">${esc(status)}</span></p>
+          <p class="small muted">${grades.percent} % der Leistung über ${all.length} ${all.length === 1 ? 'Frage' : 'Fragen'}. Die Gesamtnote ist der Durchschnitt der Fachnoten; bestanden heißt hier: jedes Fach mindestens „ausreichend“ (4).</p>
+        </div>
+      </div>
+      <div class="card section">
+        <h2>Noten je Fach</h2>
+        <ul class="list ws-grade-list">${grades.parts.map(g => `<li>
+          <div><strong>${esc(g.name)}</strong> <span class="small muted">(${esc(g.examiner)})</span>
+            <div class="small muted">${g.reached ? `${g.percent} % der Leistung · ${g.questions} ${g.questions === 1 ? 'Frage' : 'Fragen'}` : 'Nicht mehr erreicht'}</div></div>
+          <span class="ws-grade ${g.grade !== null && g.grade <= 4 ? 'good' : 'bad'}">${g.grade === null ? '–' : `${g.grade} <small>${esc(Prompts.gradeLabel(g.grade))}</small>`}</span></li>`).join('')}</ul>
+        <p class="small muted">Notenstufen wie bei der schriftlichen Prüfung: ab 92 % = 1, ab 81 % = 2, ab 67 % = 3, ab 50 % = 4, ab 30 % = 5, darunter 6.</p>
       </div>
       ${exam.sections.map(section => {
-        const v = Core.examVerdict(section.results.map(r => r.score));
+        const g = byId.get(section.id);
         const used = section.startedAt ? Math.min(exam.minutes * 60000, (section.endedAt || Date.now()) - section.startedAt) : 0;
         return `<div class="card section">
-          <h2>${esc(section.examiner)} · ${esc(section.name)}</h2>
-          <p class="small muted">${section.startedAt ? `${section.results.length} ${section.results.length === 1 ? 'Frage' : 'Fragen'} in ${clockText(used)} Minuten` : 'Nicht mehr erreicht'}${section.results.length ? ` · Ergebnis ${pct(v.avg)}` : ''}</p>
+          <h2>${esc(section.examiner)} · ${esc(section.name)}${g && g.grade !== null ? ` – Note ${g.grade}` : ''}</h2>
+          <p class="small muted">${section.startedAt ? `${section.results.length} ${section.results.length === 1 ? 'Frage' : 'Fragen'} in ${clockText(used)} Minuten · ${g.percent} %` : 'Nicht mehr erreicht'}</p>
           ${section.summary ? `<div class="panel info"><h3>Einschätzung des ${esc(section.genitive)}</h3><p style="white-space:pre-wrap">${esc(section.summary)}</p></div>` : ''}
           ${section.results.length ? `<div class="table-wrap"><table>
             <thead><tr><th>Thema</th><th>Ergebnis</th><th>Lücken</th></tr></thead>

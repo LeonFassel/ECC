@@ -650,6 +650,56 @@
     }).filter(section => section.ids.length > 0);
   }
 
+  /**
+   * Note 1–6 aus dem Anteil der Leistung (0..1) – gleiche Stufen wie bei der
+   * schriftlichen Prüfung: ab 92 % = 1, ab 81 % = 2, ab 67 % = 3, ab 50 % = 4, ab 30 % = 5.
+   */
+  function gradeFromScore(score) {
+    const percent = Math.round(clamp(Number(score) || 0, 0, 1) * 100);
+    if (percent >= 92) return 1;
+    if (percent >= 81) return 2;
+    if (percent >= 67) return 3;
+    if (percent >= 50) return 4;
+    if (percent >= 30) return 5;
+    return 6;
+  }
+
+  /**
+   * Noten der mündlichen Prüfung: je Prüfer aus dem Durchschnitt seiner Fragen,
+   * insgesamt der Durchschnitt der Fachnoten. Ein erreichter Prüfer ohne beantwortete
+   * Frage bekommt eine 6; nicht mehr erreichte Prüfer (abgebrochen) bleiben ohne Note.
+   * passed (Orientierung): alle Prüfer erreicht und jede Fachnote mindestens 4.
+   */
+  function oralExamGrades(sections) {
+    const parts = (sections || []).map(s => {
+      const scores = (s.results || []).map(r => r.score);
+      const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
+      const reached = Boolean(s.startedAt);
+      return {
+        id: s.id,
+        name: s.name,
+        examiner: s.examiner,
+        reached,
+        questions: scores.length,
+        percent: Math.round(avg * 100),
+        grade: reached ? gradeFromScore(avg) : null
+      };
+    });
+    const graded = parts.filter(p => p.grade !== null);
+    const average = graded.length ? Math.round((graded.reduce((sum, p) => sum + p.grade, 0) / graded.length) * 10) / 10 : null;
+    const answered = parts.reduce((sum, p) => sum + p.questions, 0);
+    const percent = answered
+      ? Math.round(parts.reduce((sum, p) => sum + p.percent * p.questions, 0) / answered)
+      : 0;
+    return {
+      parts,
+      average,
+      percent,
+      complete: graded.length === parts.length,
+      passed: graded.length === parts.length && parts.length > 0 && graded.every(p => p.grade <= 4)
+    };
+  }
+
   // ------------------------------------------------------------------ Teilfragen
 
   const LETTERS = 'abcdefgh';
@@ -772,6 +822,8 @@
     EXAM_PANEL,
     examPanelFor,
     buildExamPanel,
+    gradeFromScore,
+    oralExamGrades,
     splitQuestionParts,
     examinerFollowUp,
     evaluateExamAnswers,

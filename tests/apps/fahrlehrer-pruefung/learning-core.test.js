@@ -390,6 +390,29 @@ function runTests() {
     if (recht.some(x => x.subject === 'zeichen')) assert.ok(recht[0].subject !== 'zeichen', 'starts with a law question');
   }));
 
+  results.push(test('oral exam grades per examiner and overall', () => {
+    assert.deepStrictEqual([0.92, 0.915, 0.81, 0.67, 0.5, 0.3, 0.29, 0].map(Core.gradeFromScore), [1, 1, 2, 3, 4, 5, 6, 6]);
+    const sections = [
+      { id: 'recht', name: 'Recht', examiner: 'Rechtler', startedAt: 1, results: [{ score: 1 }, { score: 0.8 }] },
+      { id: 'paedagogik', name: 'Pädagogik', examiner: 'Pädagoge', startedAt: 2, results: [{ score: 0.6 }] },
+      { id: 'technik', name: 'Technik', examiner: 'Techniker', startedAt: 3, results: [] }
+    ];
+    const g = Core.oralExamGrades(sections);
+    assert.deepStrictEqual(g.parts.map(p => [p.percent, p.grade]), [[90, 2], [60, 4], [0, 6]]);
+    assert.strictEqual(g.average, 4);
+    assert.strictEqual(g.percent, 80);
+    assert.strictEqual(g.passed, false, 'Technik 6');
+    assert.strictEqual(g.complete, true);
+    const aborted = Core.oralExamGrades([sections[0], Object.assign({}, sections[2], { startedAt: 0 })]);
+    assert.strictEqual(aborted.parts[1].grade, null);
+    assert.strictEqual(aborted.average, 2);
+    assert.strictEqual(aborted.complete, false);
+    assert.strictEqual(aborted.passed, false);
+    const good = Core.oralExamGrades([sections[0], Object.assign({}, sections[1], { results: [{ score: 0.7 }] })]);
+    assert.strictEqual(good.average, 2.5);
+    assert.strictEqual(good.passed, true);
+  }));
+
   results.push(test('multi-part questions are asked one part at a time', () => {
     assert.deepStrictEqual(Core.splitQuestionParts('Was ist Aquaplaning?'), ['Was ist Aquaplaning?']);
     assert.deepStrictEqual(Core.splitQuestionParts('Einleitung.\na) Erste Frage?\nb) Zweite Frage?\nmit Zusatz'),

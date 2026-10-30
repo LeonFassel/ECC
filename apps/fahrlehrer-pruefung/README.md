@@ -15,7 +15,7 @@ braucht es kein Framework, keinen Build-Schritt und keine externen Abhängigkeit
 | Verkehrszeichen-Training | Alle 217 Zeichen aus StVO Anlage 1 bis 4 (216 mit Originalabbildung, nach Gruppen trainierbar): Zeichen sehen, Antwort einsprechen oder tippen, Rückmeldung zu „richtig erwähnt“, „falsch“ und „hat gefehlt“ |
 | Üben | Frage erst frei beantworten (tippen oder einsprechen), danach Schnellbewertung, Erklärung in einfacher Sprache, Praxisbeispiel, Musterantwort und mögliche Nachfragen |
 | Heute | Tagesplan aus fälligen Wiederholungen (Leitner-System), Schwächen und neuen Themen |
-| Prüfung | Mündliche Prüfung wie in echt: drei Prüfer nacheinander – Rechtler (Verkehrszeichen, Recht, Verkehrsverhalten), Pädagoge (Pädagogik, Fahrlehrerwesen), Techniker – mit je 10 Minuten (Uhr oben rechts, wahlweise 5 Minuten als Kurztraining). Ist die Zeit um, kommt keine neue Frage mehr; die laufende Antwort darf noch abgegeben werden, dann übernimmt der nächste Prüfer. Mehrteilige Fragen stellt der Prüfer wie im Gespräch nacheinander – immer nur eine Frage auf einmal. Wahlweise Trainings-Prüfer (offline) oder KI-Prüfer mit eigener Rolle und Einschätzung je Prüfer |
+| Prüfung | Mündliche Prüfung wie in echt: drei Prüfer nacheinander – Rechtler (Verkehrszeichen, Recht, Verkehrsverhalten), Pädagoge (Pädagogik, Fahrlehrerwesen), Techniker – mit je 10 Minuten (Uhr oben rechts, wahlweise 5 Minuten als Kurztraining). Ist die Zeit um, kommt keine neue Frage mehr; die laufende Antwort darf noch abgegeben werden, dann übernimmt der nächste Prüfer. Mehrteilige Fragen stellt der Prüfer wie im Gespräch nacheinander – immer nur eine Frage auf einmal. Am Ende gibt es eine Note je Fach (1–6, Stufen wie bei der schriftlichen Prüfung), die Gesamtnote als Durchschnitt und die Prozentwerte. Wahlweise Trainings-Prüfer (offline) oder KI-Prüfer mit eigener Rolle und Einschätzung je Prüfer |
 | Schriftliche Prüfung | Original-Prüfungen zum Auswählen: 5-Stunden-Timer zum selbst Starten, links die Aufgaben, rechts kariertes A4-Papier; Schreiben und Markieren mit Apple Pencil (Kugelschreiber, Textmarker, Radierer, Rückgängig), Zwei-Finger-Zoom, Abgabe mit Noten je Fach durch Claude |
 | Analyse | Schwache Themen, häufig vergessene Kernpunkte, Fächervergleich, Trend und konkrete Empfehlungen |
 
@@ -98,6 +98,10 @@ dafür die Diktierfunktion eingeschaltet sein; Safari fragt beim ersten Mal nach
 der Mikrofon-Erlaubnis. Wo die Seite keinen
 Mikrofonzugriff bekommt (etwa als eingebettete Seite), diktieren Sie über die
 Mikrofon-Taste der Handy-Tastatur direkt ins Antwortfeld.
+
+Browser beenden die Spracherkennung nach einer Sprechpause von selbst. Die App
+hört dann automatisch weiter, bis Sie auf „Aufnahme beenden“ oder auf
+„Antwort prüfen“ tippen – das Mikrofon geht also nicht mehr zwischendurch aus.
 
 Die lokale Bewertung erkennt neben fehlenden Kernpunkten auch typische
 Fehler, z. B. „beim Stoppschild reicht langsames Durchrollen“. Verneinungen wie
