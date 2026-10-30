@@ -8,6 +8,7 @@
 
   const W = root.FLWritten;
   const Ink = root.FLInk;
+  const Prompts = root.FLPrompts;
   const exams = ((root.FLQuestionsSchriftlich && root.FLQuestionsSchriftlich.exams) || [])
     .slice()
     .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || String(a.name || a.title).localeCompare(String(b.name || b.title)));
@@ -889,7 +890,7 @@
   function renderGrades(result) {
     return `
       <div class="card section ws-result-head">
-        <div class="ws-grade-big ${result.passed ? 'good' : 'bad'}"><span>Ø ${esc(formatGrade(result.average))}</span><small>${esc(result.averageLabel)}</small></div>
+        <div class="ws-grade-big ${Prompts.gradeTone(result.average)}"><span>Ø ${esc(formatGrade(result.average))}</span><small>${esc(result.averageLabel)}</small></div>
         <div>
           <p><span class="chip ${result.passed ? 'sicher' : 'schwach'}">${result.passed ? 'Bestanden (Orientierung)' : 'Noch nicht bestanden (Orientierung)'}</span></p>
           ${result.summary ? `<p>${esc(result.summary)}</p>` : ''}
@@ -900,7 +901,7 @@
         <h2>Noten je Fach</h2>
         <ul class="list ws-grade-list">${result.parts.map(part => `<li>
           <div><strong>${esc(part.name)}</strong><div class="small muted">${esc(part.percent)} % der Leistung</div></div>
-          <span class="ws-grade ${part.grade <= 4 ? 'good' : 'bad'}">${esc(part.grade)} <small>${esc(part.label)}</small></span></li>`).join('')}</ul>
+          <span class="ws-grade ${Prompts.gradeTone(part.grade)}">${esc(part.grade)} <small>${esc(part.label)}</small></span></li>`).join('')}</ul>
       </div>
       ${result.parts.map(part => `<details class="disclosure ws-part-detail"><summary>${esc(part.name)} – Note ${esc(part.grade)} (${esc(part.label)})</summary>
         ${part.summary ? `<p>${esc(part.summary)}</p>` : ''}
@@ -914,7 +915,8 @@
 
   function archiveChip(summary) {
     if (summary.status === 'done' && summary.average !== null && summary.average !== undefined) {
-      return `<span class="chip ${summary.passed ? 'sicher' : 'schwach'}">Ø ${esc(formatGrade(summary.average))}</span>`;
+      const chip = { good: 'sicher', warn: 'mittel', bad: 'schwach' }[Prompts.gradeTone(summary.average)];
+      return `<span class="chip ${chip}">Ø ${esc(formatGrade(summary.average))}</span>`;
     }
     if (summary.status === 'grading' || summary.status === 'pending') return '<span class="chip mittel">Wird bewertet</span>';
     return '<span class="chip offen">Nicht bewertet</span>';

@@ -40,7 +40,7 @@
     'Ist eine Frage ein Verkehrszeichen, sieht der Prüfling nur die Grafik: Nenne den Namen des Zeichens nicht, frage z. B. „Was bedeutet dieses Zeichen?“.',
     'Eine Prüfungsfrage ist erst abgeschlossen, wenn alle ihre Teilaufgaben gestellt und beantwortet sind (oder die Zeit abgelaufen ist). Wenn eine Frage abgeschlossen ist, setze assessment.completed = true, trage die questionId ein und bewerte die Gesamtleistung zu dieser Frage (score 0..1, fehlende Kernpunkte, kurzer Kommentar inkl. fachlicher Fehler).',
     'Leite dann in message direkt zur nächsten Frage über. Andernfalls assessment.completed = false, questionId = "", score = 0, missing = [], comment = "".',
-    'Nach der letzten Frage oder wenn dir mitgeteilt wird, dass die Zeit abgelaufen ist: finished = true und summary mit einer ehrlichen Einschätzung zu deinem Prüfungsgebiet (Stärken, Lücken, Empfehlung). Sonst finished = false, summary = "".',
+    'Nach der letzten Frage oder wenn dir mitgeteilt wird, dass die Zeit abgelaufen ist, und die laufende Frage beantwortet ist: finished = true und summary mit einer ehrlichen Einschätzung zu deinem Prüfungsgebiet (Stärken, Lücken, Empfehlung). Sonst finished = false, summary = "".',
     'Halte deine Beiträge kurz wie in einer echten Prüfung (1–4 Sätze).'
   ].join('\n');
 
@@ -112,7 +112,22 @@
     return `${role}Prüfungsplan (nur für dich als Prüfer sichtbar):\n\n${plan}\n\nBeginne jetzt mit einer kurzen Begrüßung und der ersten Frage.`;
   }
 
-  const TIME_UP_NOTE = '(Hinweis an den Prüfer, für den Prüfling unsichtbar: Die Prüfungszeit ist abgelaufen. Stelle keine weitere Frage und keine Nachfrage. Hat der Prüfling auf die laufende Frage geantwortet, bewerte sie jetzt abschließend (assessment.completed = true); hat er noch nicht geantwortet, setze assessment.completed = false. Verabschiede dich in message mit einem kurzen Satz und setze finished = true mit summary.)';
+  /**
+   * Hinweis bei abgelaufener Zeit: keine neue Frage mehr, die laufende Frage darf noch zu
+   * Ende beantwortet werden (offene Teilfragen inklusive). Danach verabschiedet sich der
+   * Prüfer und kündigt den nächsten Prüfer an. options.next: { examiner, name } oder null
+   * (letzter Prüfer); options.wrapUp: jetzt ohne weitere Teilfrage abschließen.
+   */
+  function timeUpNote(options) {
+    const o = options || {};
+    const parts = o.wrapUp
+      ? ' Stelle auch keine Teilfrage mehr.'
+      : ' Die laufende Frage darf der Prüfling noch zu Ende beantworten: Hat sie noch Teilfragen, die du noch nicht gestellt hast, stelle jetzt die nächste davon (assessment = null, finished = false).';
+    let handover = '';
+    if (o.next) handover = ` und kündige an, dass jetzt der ${o.next.examiner} mit ${o.next.name} übernimmt`;
+    else if (o.next === null) handover = ' und sage, dass die Prüfung damit beendet ist';
+    return `(Hinweis an den Prüfer, für den Prüfling unsichtbar: Die Prüfungszeit ist abgelaufen. Stelle keine neue Prüfungsfrage und keine Nachfrage mehr.${parts} Ist die laufende Frage beantwortet, bewerte sie jetzt abschließend (assessment.completed = true, nur nach den gestellten Teilen); hat der Prüfling noch nicht geantwortet, setze assessment.completed = false. Verabschiede dich dann in message kurz, etwa „Passt, danke – meine Zeit ist um, wir sind fertig.“,${handover}. Setze dabei finished = true mit summary.)`;
+  }
 
   /**
    * Baut abwechselnde Nachrichten (user/assistant) aus dem Gesprächsverlauf.
@@ -131,11 +146,11 @@
       if (prev.role === role) prev.content += `\n\n${content}`;
       else messages.push({ role, content });
     }
-    const timeUp = Boolean(options && options.timeUp);
+    const note = options && options.timeUp ? timeUpNote(options) : '';
     if (messages[messages.length - 1].role === 'assistant') {
-      messages.push({ role: 'user', content: timeUp ? TIME_UP_NOTE : '(Der Prüfling wartet auf Ihre nächste Frage.)' });
-    } else if (timeUp) {
-      messages[messages.length - 1].content += `\n\n${TIME_UP_NOTE}`;
+      messages.push({ role: 'user', content: note || '(Der Prüfling wartet auf Ihre nächste Frage.)' });
+    } else if (note) {
+      messages[messages.length - 1].content += `\n\n${note}`;
     }
     return messages;
   }
@@ -188,6 +203,15 @@
   function gradeLabel(grade) {
     const g = GRADES.find(x => x.grade === Math.round(grade));
     return g ? g.label : '';
+  }
+
+  /** Farbe einer Note (auch Ø-Noten, gerundet wie die Bezeichnung): 1–2 grün, 3–4 orange, 5–6 rot. */
+  function gradeTone(grade) {
+    if (grade === null || grade === undefined || grade === '') return '';
+    const g = Math.round(Number(grade));
+    if (!Number.isFinite(g)) return '';
+    if (g <= 2) return 'good';
+    return g <= 4 ? 'warn' : 'bad';
   }
 
   /**
@@ -318,6 +342,8 @@
     writtenExamText,
     writtenGradingPrompt,
     gradeLabel,
+    gradeTone,
+    timeUpNote,
     normalizeWrittenGrading,
     SEARCH_SYSTEM,
     SEARCH_FORMAT,

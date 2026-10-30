@@ -168,7 +168,7 @@ async function runTests() {
 
   const service = {
     evaluate: async (q, answer) => ({ score: 0.5, covered: [], missing: [], errors: [], feedback: `${q.id}:${answer}`, tip: '' }),
-    examine: async (qs, history, options) => ({ message: `${qs.length}/${history.length}${options ? `/${options.examiner}/${options.minutes}/${options.timeUp}` : ''}`, assessment: null, finished: false, summary: '' }),
+    examine: async (qs, history, options) => ({ message: `${qs.length}/${history.length}${options ? `/${options.examiner}/${options.minutes}/${options.timeUp}/${options.wrapUp}/${options.next === null ? 'ende' : options.next ? options.next.examiner : '-'}` : ''}`, assessment: null, finished: false, summary: '' }),
     gradeWritten: async () => ({ parts: [] }),
     answerSearch: async (query, sources) => ({ found: true, answer: `${query}:${sources.map(q => q.id).join(',')}`, laws: [], sources: [] })
   };
@@ -206,7 +206,13 @@ async function runTests() {
 
   results.push(await test('examiner endpoint only accepts the fixed examiner roles', async () => {
     const tech = await post(fullUrl, '/api/examiner', { questionIds: [question.id], history: [], panel: 'technik', minutes: 999, timeUp: true });
-    assert.strictEqual((await tech.json()).message, '1/0/Techniker/10/true');
+    assert.strictEqual((await tech.json()).message, '1/0/Techniker/10/true/false/-');
+    const recht = await post(fullUrl, '/api/examiner', { questionIds: [question.id], history: [], panel: 'recht', minutes: 5, timeUp: true, wrapUp: true, next: 'paedagogik' });
+    assert.strictEqual((await recht.json()).message, '1/0/Rechtler/5/true/true/Pädagoge');
+    const last = await post(fullUrl, '/api/examiner', { questionIds: [question.id], history: [], panel: 'technik', next: '' });
+    assert.strictEqual((await last.json()).message, '1/0/Techniker/10/false/false/ende');
+    const forged = await post(fullUrl, '/api/examiner', { questionIds: [question.id], history: [], panel: 'technik', next: { examiner: '<b>x</b>' } });
+    assert.strictEqual((await forged.json()).message, '1/0/Techniker/10/false/false/-');
     const unknown = await post(fullUrl, '/api/examiner', { questionIds: [question.id], history: [], panel: '<b>Chef</b>' });
     assert.strictEqual((await unknown.json()).message, '1/0');
   }));

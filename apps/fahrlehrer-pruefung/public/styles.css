@@ -549,11 +549,13 @@ body.ws-active .main { margin: 0; max-width: none; padding: 0; }
 .ws-grade-big { display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 120px; padding: 14px 18px; border-radius: 16px; background: var(--surface-2); }
 .ws-grade-big span { font-size: 2.2rem; font-weight: 800; line-height: 1.1; }
 .ws-grade-big.good { background: var(--good-soft); color: var(--good); }
+.ws-grade-big.warn { background: var(--warn-soft); color: var(--warn); }
 .ws-grade-big.bad { background: var(--bad-soft); color: var(--bad); }
 .ws-result-head > div:last-child { flex: 1; min-width: 220px; }
 .ws-grade { font-size: 1.4rem; font-weight: 800; white-space: nowrap; }
 .ws-grade small { font-size: .8rem; font-weight: 600; }
 .ws-grade.good { color: var(--good); }
+.ws-grade.warn { color: var(--warn); }
 .ws-grade.bad { color: var(--bad); }
 .ws-part-detail ul { margin: 6px 0 0; padding-left: 20px; }
 .ws-grading .spinner { width: 28px; height: 28px; flex-shrink: 0; color: var(--primary); }

@@ -82,6 +82,27 @@ function runTests() {
     assert.ok(!normal[normal.length - 1].content.includes('abgelaufen'));
   }));
 
+  results.push(test('time-up note lets the current question finish and hands over', () => {
+    const open = Prompts.timeUpNote({ next: { examiner: 'Pädagoge', name: 'Pädagogik' } });
+    assert.ok(open.includes('keine neue Prüfungsfrage') && open.includes('stelle jetzt die nächste davon'));
+    assert.ok(open.includes('wir sind fertig') && open.includes('jetzt der Pädagoge mit Pädagogik übernimmt'));
+    const final = Prompts.timeUpNote({ wrapUp: true, next: null });
+    assert.ok(final.includes('keine Teilfrage mehr') && !final.includes('stelle jetzt die nächste davon'));
+    assert.ok(final.includes('die Prüfung damit beendet ist'));
+    assert.ok(!Prompts.timeUpNote({}).includes('übernimmt') && !Prompts.timeUpNote({}).includes('beendet ist'));
+    const msgs = Prompts.examinerMessages([plain], [{ role: 'examiner', text: 'Frage' }, { role: 'candidate', text: 'Antwort' }], 'LEAD', { timeUp: true, next: null });
+    assert.ok(msgs[msgs.length - 1].content.includes('die Prüfung damit beendet ist'));
+  }));
+
+  results.push(test('grade colours: 1-2 green, 3-4 orange, 5-6 red', () => {
+    assert.deepStrictEqual([1, 2, 3, 4, 5, 6].map(Prompts.gradeTone), ['good', 'good', 'warn', 'warn', 'bad', 'bad']);
+    assert.strictEqual(Prompts.gradeTone(2.4), 'good');
+    assert.strictEqual(Prompts.gradeTone(2.5), 'warn', 'wie die Bezeichnung: 2,5 = befriedigend');
+    assert.strictEqual(Prompts.gradeLabel(2.5), 'befriedigend');
+    assert.strictEqual(Prompts.gradeTone(4.5), 'bad');
+    assert.strictEqual(Prompts.gradeTone(null), '');
+  }));
+
   results.push(test('normalizers clamp scores and drop malformed fields', () => {
     const ev = Prompts.normalizeEvaluation({ score: '1.4', covered: ['x', 3], errors: 'nope' });
     assert.strictEqual(ev.score, 1);

@@ -122,7 +122,10 @@ function createAppServer(options) {
       name: section.name,
       minutes: minutes >= 1 && minutes <= 60 ? minutes : 10,
       first: body.first !== false,
-      timeUp: body.timeUp === true
+      timeUp: body.timeUp === true,
+      wrapUp: body.wrapUp === true,
+      // Nächster Prüfer für die Übergabe; '' = letzter Prüfer, sonst unbekannt.
+      next: EXAM_PANEL.find(s => s.id === body.next) || (body.next === '' ? null : undefined)
     };
   }
 

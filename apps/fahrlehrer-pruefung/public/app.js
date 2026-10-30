@@ -309,17 +309,21 @@
     }
   }
 
-  /** panel: { panel: 'recht'|'paedagogik'|'technik', minutes, first, timeUp } – Rolle des Prüfers. */
+  /**
+   * panel: { panel: 'recht'|'paedagogik'|'technik', minutes, first, timeUp, wrapUp, next } – Rolle
+   * des Prüfers; next: Id des nächsten Prüfers ('' = letzter Prüfer).
+   */
   async function aiExamine(ids, history, panel) {
     const p = panel || {};
     if (aiStatus.mode === 'server') {
-      return postJson('api/examiner', { questionIds: ids, history, panel: p.panel, minutes: p.minutes, first: p.first, timeUp: p.timeUp });
+      return postJson('api/examiner', { questionIds: ids, history, panel: p.panel, minutes: p.minutes, first: p.first, timeUp: p.timeUp, wrapUp: p.wrapUp, next: p.next });
     }
     const list = ids.map(id => questionById.get(id)).filter(Boolean);
     const section = Core.EXAM_PANEL.find(s => s.id === p.panel);
+    const next = Core.EXAM_PANEL.find(s => s.id === p.next) || (p.next === '' ? null : undefined);
     const options = section
-      ? { examiner: section.examiner, name: section.name, minutes: p.minutes, first: p.first, timeUp: p.timeUp }
-      : { timeUp: p.timeUp };
+      ? { examiner: section.examiner, name: section.name, minutes: p.minutes, first: p.first, timeUp: p.timeUp, wrapUp: p.wrapUp, next }
+      : { timeUp: p.timeUp, wrapUp: p.wrapUp, next };
     if (aiStatus.mode === 'apikey') {
       try {
         return await apiService.examine(list, history, options);
@@ -1683,9 +1687,11 @@
         el.classList.toggle('warn', ms > 0 && ms <= 120000);
         el.classList.toggle('over', ms === 0);
       }
+      // Nicht neu zeichnen: Eingabefeld, Tastatur und Diktat laufen ungestört weiter.
       if (ms === 0 && !section.timeUp) {
         section.timeUp = true;
-        if (route().name === 'pruefung') render();
+        const notice = document.getElementById('exam-timeup');
+        if (notice && !exam.loading) notice.innerHTML = timeUpNotice(section);
       }
     }, 1000);
   }
@@ -1707,13 +1713,45 @@
     }).join('')}</ol>`;
   }
 
+  function nextExaminer() {
+    return exam.sections[exam.current + 1] || null;
+  }
+
+  /** Zeit um: keine neue Frage, die laufende darf noch beantwortet werden. */
+  function timeUpNotice(section) {
+    const next = nextExaminer();
+    return `<div class="panel warn"><h3>Die ${exam.minutes} Minuten für ${esc(section.name)} sind um</h3>
+      <p>Es kommt keine neue Frage mehr. Beantworten Sie die laufende Frage noch zu Ende – danach verabschiedet sich der ${esc(section.examiner)}${next ? ` und der ${esc(next.examiner)} übernimmt` : ' und die Prüfung ist beendet'}.</p>
+      <div class="btn-row"><button class="btn" data-action="exam-next-section">${next ? `Ohne weitere Antwort weiter zu ${esc(next.name)}` : 'Ohne weitere Antwort beenden'}</button></div></div>`;
+  }
+
+  /** Verabschiedung mit Übergabe an den nächsten Prüfer. */
+  function handoverText(closing) {
+    const next = nextExaminer();
+    return `${closing} ${next ? `Jetzt übernimmt der ${next.examiner} mit ${next.name}.` : 'Damit ist die Prüfung beendet.'}`;
+  }
+
+  /** Der letzte Prüfer hat sich verabschiedet – erst dann zur Auswertung. */
+  function renderExamClosing() {
+    return `
+      <header class="page-head">
+        <h1>Mündliche Prüfung</h1>
+        <p>${esc(examModeLabel(exam))}</p>
+      </header>
+      ${examSteps()}
+      <div class="card section">
+        <div class="chat" aria-live="polite">${exam.transcript.map(examBubble).join('')}</div>
+        <div class="panel info"><h3>Die Prüfung ist beendet</h3><p>Alle Prüfer sind fertig. Ihre Noten stehen in der Auswertung.</p>
+          <div class="btn-row"><button class="btn primary" data-action="exam-show-result">Zur Auswertung</button></div></div>
+      </div>`;
+  }
+
   function renderExam() {
     if (!exam) return renderExamIntro();
     if (exam.finished) return renderExamResult();
+    if (exam.closing) return renderExamClosing();
     const section = examSection();
     const ms = remainingMs(section);
-    const next = exam.sections[exam.current + 1];
-    const nextLabel = next ? `Weiter zu ${next.name} (${next.examiner})` : 'Prüfung beenden und auswerten';
     return `
       <header class="page-head">
         <h1>Mündliche Prüfung</h1>
@@ -1730,9 +1768,7 @@
           ${exam.loading ? `<div class="bubble examiner"><span class="who">${esc(section.examiner)}</span><span class="spinner" aria-label="Prüfer denkt nach"></span></div>` : ''}
         </div>
         ${exam.error ? `<div class="panel bad"><p>${esc(exam.error)}</p><button class="btn" data-action="exam-retry">Erneut versuchen</button></div>` : ''}
-        ${section.timeUp && !exam.loading ? `<div class="panel warn"><h3>Die ${exam.minutes} Minuten für ${esc(section.name)} sind um</h3>
-          <p>Es kommt keine neue Frage mehr. Sie können Ihre laufende Antwort noch abgeben – danach geht es weiter.</p>
-          <div class="btn-row"><button class="btn" data-action="exam-next-section">${esc(nextLabel)}</button></div></div>` : ''}
+        <div id="exam-timeup">${section.timeUp && !exam.loading ? timeUpNotice(section) : ''}</div>
         ${questionStage(currentExamQuestion())}
         <label for="exam-answer" class="kpi-label">Ihre Antwort – tippen oder einsprechen</label>
         <textarea id="exam-answer" data-input="exam-answer" placeholder="Antworten Sie so, wie Sie es in der Prüfung sagen würden …" ${exam.loading ? 'disabled' : ''}>${esc(exam.draft)}</textarea>
@@ -1777,6 +1813,11 @@
         <div class="btn-row"><button class="btn primary" data-action="exam-start">Prüfung starten</button></div>
         <p class="small muted" style="margin-top:12px">Tipp: Antworten Sie strukturiert – erst die Kernaussage, dann Rechtsgrundlage, dann ein Praxisbeispiel.</p>
       </div>`;
+  }
+
+  /** Chip-Farbe einer Note: 1–2 grün, 3–4 orange, 5–6 rot. */
+  function gradeChip(grade) {
+    return { good: 'sicher', warn: 'mittel', bad: 'schwach' }[Prompts.gradeTone(grade)] || 'offen';
   }
 
   function formatGrade(value) {
@@ -1827,7 +1868,7 @@
     const answered = grades.parts.reduce((sum, g) => sum + g.questions, 0);
     return `
       <div class="card section ws-result-head">
-        <div class="ws-grade-big ${grades.passed ? 'good' : 'bad'}">
+        <div class="ws-grade-big ${Prompts.gradeTone(grades.average)}">
           <span>${grades.average === null ? '–' : `Ø ${esc(formatGrade(grades.average))}`}</span>
           <small>${grades.average === null ? 'keine Note' : esc(Prompts.gradeLabel(grades.average))}</small>
         </div>
@@ -1842,7 +1883,7 @@
         <ul class="list ws-grade-list">${grades.parts.map(g => `<li>
           <div><strong>${esc(g.name)}</strong> <span class="small muted">(${esc(g.examiner)})</span>
             <div class="small muted">${g.reached ? `${g.percent} % der Leistung · ${questionCount(g.questions)}` : rec.reconstructed ? 'Keine Ergebnisse gespeichert' : 'Nicht mehr erreicht'}</div></div>
-          <span class="ws-grade ${g.grade !== null && g.grade <= 4 ? 'good' : 'bad'}">${g.grade === null ? '–' : `${g.grade} <small>${esc(Prompts.gradeLabel(g.grade))}</small>`}</span></li>`).join('')}</ul>
+          <span class="ws-grade ${g.grade === null ? 'bad' : Prompts.gradeTone(g.grade)}">${g.grade === null ? '–' : `${g.grade} <small>${esc(Prompts.gradeLabel(g.grade))}</small>`}</span></li>`).join('')}</ul>
         <p class="small muted">Notenstufen wie bei der schriftlichen Prüfung: ab 92 % = 1, ab 81 % = 2, ab 67 % = 3, ab 50 % = 4, ab 30 % = 5, darunter 6.</p>
       </div>
       ${rec.sections.map(section => examSectionCard(rec, section, byId.get(section.id))).join('')}`;
@@ -1909,10 +1950,10 @@
     const overall = averageOf(known.map(x => x.grade));
     const rows = subjectsList.map(({ panel, count, grade }) => `<li><div><strong>${esc(panel.name)}</strong> <span class="small muted">(${esc(panel.examiner)})</span>
         <div class="small muted">${count ? `aus ${count === 1 ? 'der letzten Prüfung' : `den letzten ${count} Prüfungen`}` : 'noch keine Note'}</div></div>
-        <span class="ws-grade ${grade !== null && grade <= 4 ? 'good' : 'bad'}">${grade === null ? '–' : `${esc(formatGrade(grade))} <small>${esc(Prompts.gradeLabel(grade))}</small>`}</span></li>`).join('');
+        <span class="ws-grade ${grade === null ? '' : Prompts.gradeTone(grade)}">${grade === null ? '–' : `${esc(formatGrade(grade))} <small>${esc(Prompts.gradeLabel(grade))}</small>`}</span></li>`).join('');
     const complete = known.length === subjectsList.length;
     return `<div class="card section ws-result-head">
-        <div class="ws-grade-big ${complete && known.every(x => x.grade <= 4) ? 'good' : 'bad'}"><span>Ø ${esc(formatGrade(overall))}</span><small>${esc(Prompts.gradeLabel(overall))}</small></div>
+        <div class="ws-grade-big ${Prompts.gradeTone(overall)}"><span>Ø ${esc(formatGrade(overall))}</span><small>${esc(Prompts.gradeLabel(overall))}</small></div>
         <div><div class="kpi-label">Ihr Stand</div><p class="small muted">Je Fach der Durchschnitt Ihrer letzten bis zu drei Noten, gesamt der Durchschnitt der Fächer${complete ? '' : ' (bisher nur aus den Fächern mit Note)'}.</p></div>
       </div>
       <div class="card section"><ul class="list ws-grade-list">${rows}</ul></div>`;
@@ -1927,7 +1968,7 @@
       <div class="swipe-content">
         <div><a href="#/muendlich-archiv/${esc(rec.id)}">${esc(name)}</a>
           <div class="small muted">${rec.reconstructed ? 'Rekonstruiert' : rec.mode === 'ai' ? 'KI-Prüfer' : 'Trainings-Prüfer'} · ${questionCount(answered)}${perSubject ? ` · ${esc(perSubject)}` : ''}</div></div>
-        ${grades.average === null ? '<span class="chip offen">Keine Note</span>' : `<span class="chip ${grades.passed ? 'sicher' : 'schwach'}">Ø ${esc(formatGrade(grades.average))}</span>`}
+        ${grades.average === null ? '<span class="chip offen">Keine Note</span>' : `<span class="chip ${gradeChip(grades.average)}">Ø ${esc(formatGrade(grades.average))}</span>`}
       </div>
       <button type="button" class="swipe-delete" data-action="oral-archive-remove" data-id="${esc(rec.id)}" aria-label="${esc(name)} aus dem Archiv löschen" title="Löschen" tabindex="-1">${WrittenUI.icon('trash')}</button>
     </li>`;
@@ -1979,7 +2020,7 @@
     const minutes = Number(minutesInput ? minutesInput.value : 10) === 5 ? 5 : 10;
     const sections = Core.buildExamPanel(window.FLData, state, now(), 14).map(s => Object.assign(s, {
       index: 0, part: 0, round: 0, answers: [], transcript: [], results: [], summary: '',
-      startedAt: 0, endsAt: 0, endedAt: 0, timeUp: false, done: false
+      startedAt: 0, endsAt: 0, endedAt: 0, timeUp: false, overtime: 0, done: false
     }));
     if (!sections.length) {
       toast('Keine Prüfungsfragen gefunden.');
@@ -2035,15 +2076,19 @@
       startSection(exam.current + 1);
       return;
     }
-    finishExam();
+    finishExam(false);
     render();
   }
 
-  /** Prüfung beendet: Uhr anhalten und ins Archiv legen. */
-  function finishExam() {
-    exam.finished = true;
+  /**
+   * Prüfung beendet: Uhr anhalten und ins Archiv legen. showResult: gleich zur Auswertung
+   * (Abbruch); sonst bleibt die Verabschiedung des letzten Prüfers stehen.
+   */
+  function finishExam(showResult) {
     stopExamClock();
     if (!exam.archiveId && examResults().length) archiveOralExam();
+    if (showResult) exam.finished = true;
+    else exam.closing = true;
   }
 
   function archiveOralExam() {
@@ -2079,8 +2124,9 @@
     const evaluation = Core.evaluateExamAnswers(q, section.answers);
     const timeUp = remainingMs(section) === 0;
     const parts = examParts(q);
-    // Mehrteilige Frage: erst alle Teilfragen nacheinander, dann ggf. Nachfragen.
-    if (!timeUp && section.part < parts.length - 1) {
+    // Mehrteilige Frage: erst alle Teilfragen nacheinander, dann ggf. Nachfragen. Die
+    // laufende Frage darf auch nach Ablauf der Zeit noch zu Ende beantwortet werden.
+    if (section.part < parts.length - 1) {
       section.part += 1;
       examSay(section, `${PART_LEADS[(section.part - 1) % PART_LEADS.length]} ${parts[section.part]}`);
       return;
@@ -2103,7 +2149,7 @@
     section.answers = [];
 
     if (timeUp || section.index >= section.ids.length) {
-      endSection(timeUp ? 'Danke, meine Zeit ist um.' : 'Danke, ich habe keine weiteren Fragen.');
+      endSection(handoverText(timeUp ? 'Passt, danke – meine Zeit ist um, wir sind fertig.' : 'Danke, ich habe keine weiteren Fragen – wir sind fertig.'));
       return;
     }
     examSay(section, `Danke. Nächste Frage:\n\n${examQuestionText(questionById.get(section.ids[section.index]))}`);
@@ -2128,20 +2174,24 @@
       finishExamQuestion(q.id, evaluation.score, evaluation.missing);
       section.answers = [];
     }
-    endSection('Danke, meine Zeit ist um.');
+    endSection(handoverText('Passt, danke – meine Zeit ist um, wir sind fertig.'));
   }
 
   async function aiExamTurn(forceTimeUp) {
     const current = exam;
     const section = examSection();
     const timeUp = Boolean(forceTimeUp) || remainingMs(section) === 0;
+    // Nach Ablauf der Zeit höchstens noch zwei Teilfragen der laufenden Frage, dann Schluss.
+    const wrapUp = Boolean(forceTimeUp) || (section.overtime || 0) >= 2;
+    const next = nextExaminer();
     current.loading = true;
     current.error = null;
     render();
     try {
       const ids = section.ids.slice(0, MAX_AI_SECTION_QUESTIONS);
-      const reply = await aiExamine(ids, section.transcript, { panel: section.id, minutes: current.minutes, first: current.current === 0, timeUp });
+      const reply = await aiExamine(ids, section.transcript, { panel: section.id, minutes: current.minutes, first: current.current === 0, timeUp, wrapUp, next: next ? next.id : '' });
       if (exam !== current) return;
+      if (timeUp) section.overtime = (section.overtime || 0) + 1;
       if (reply.assessment) {
         const qid = ids.includes(reply.assessment.questionId)
           ? reply.assessment.questionId
@@ -2152,7 +2202,7 @@
       }
       if (reply.message) examSay(section, reply.message);
       current.loading = false;
-      if (reply.finished || timeUp) {
+      if (reply.finished || (timeUp && wrapUp)) {
         section.summary = reply.summary;
         endSection();
         return;
@@ -2416,7 +2466,7 @@
       else {
         const section = examSection();
         if (section && !section.done) section.endedAt = Date.now();
-        finishExam();
+        finishExam(true);
       }
       render();
     },
@@ -2425,6 +2475,10 @@
       const row = el.closest('.swipe-row');
       if (row) row.classList.add('removing');
       setTimeout(() => deleteOralExam(el.dataset.id, true), 180);
+    },
+    'exam-show-result': () => {
+      exam.finished = true;
+      render();
     },
     'exam-new': () => {
       stopExamClock();
