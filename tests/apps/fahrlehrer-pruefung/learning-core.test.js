@@ -370,6 +370,25 @@ function runTests() {
     assert.ok(noSigns.every(id => !q(id).sign));
   }));
 
+  results.push(test('oral exam asks only signs up to 357 (Sackgasse), no additional signs', () => {
+    const sign = (sign, signLabel) => ({ id: `vz-${sign}`, subject: 'zeichen', sign, signLabel });
+    assert.ok(Core.inOralExam(sign('101', 'Zeichen 101')));
+    assert.ok(Core.inOralExam(sign('357', 'Zeichen 357')));
+    assert.ok(Core.inOralExam(sign('350.2', 'Zeichen 350.2')));
+    assert.ok(!Core.inOralExam(sign('358', 'Zeichen 358')));
+    assert.ok(!Core.inOralExam(sign('450', 'Zeichen 450')));
+    assert.ok(!Core.inOralExam(sign(null, 'Zusatzzeichen')));
+    assert.ok(!Core.inOralExam(sign(null, 'Sinnbild')));
+    assert.ok(!Core.inOralExam(sign('318', 'Bild 318')));
+    assert.ok(Core.inOralExam({ id: 'zeichen-01', subject: 'zeichen', topic: 'Vorfahrtregelnde Zeichen' }), 'general sign question stays');
+    assert.ok(Core.inOralExam(q('verhalten-02')));
+    const recht = Core.buildExamPanel(data, Core.createState(), NOW, 1000).find(s => s.id === 'recht');
+    const asked = recht.ids.map(q).filter(x => x.signLabel);
+    assert.ok(asked.length > 50);
+    assert.ok(asked.every(x => /^Zeichen /.test(x.signLabel) && parseFloat(x.sign) <= 357));
+    assert.ok(asked.some(x => x.sign === '357'));
+  }));
+
   results.push(test('exam panel: three examiners with their own subjects', () => {
     assert.deepStrictEqual(Core.EXAM_PANEL.map(s => s.examiner), ['Rechtler', 'Pädagoge', 'Techniker']);
     assert.strictEqual(Core.examPanelFor({ subject: 'zeichen' }), 'recht');

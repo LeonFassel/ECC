@@ -619,6 +619,17 @@
     return null;
   }
 
+  // Verkehrszeichen in der mündlichen Prüfung: nur Zeichen bis 357 (Sackgasse) –
+  // keine Zusatzzeichen, Sinnbilder, Markierungen ohne Zeichennummer und keine Zeichen ab 358.
+  const ORAL_SIGN_MAX = 357;
+
+  /** Kommt die Frage in der mündlichen Prüfung dran? Allgemeine Fragen zu Zeichen bleiben. */
+  function inOralExam(q) {
+    if (!q || q.subject !== 'zeichen' || !q.signLabel) return Boolean(q);
+    const m = /^(\d+)(?:\.\d+)?$/.exec(String(q.sign || ''));
+    return Boolean(m) && /^Zeichen\s/.test(q.signLabel) && Number(m[1]) <= ORAL_SIGN_MAX;
+  }
+
   /**
    * Fragen je Prüfer, schwächere und neue Themen zuerst (mit Zufall). Beim Rechtler
    * ist etwa jede dritte Frage ein Verkehrszeichen. perSection: Vorrat je Prüfer
@@ -633,7 +644,7 @@
       return { q, key: (m === null ? 0.4 : m) + rand() * 0.3 };
     }).sort((a, b) => a.key - b.key).map(x => x.q);
     return EXAM_PANEL.map(section => {
-      const pool = data.questions.filter(q => examPanelFor(q) === section.id);
+      const pool = data.questions.filter(q => examPanelFor(q) === section.id && inOralExam(q));
       let ids;
       if (section.id === 'recht') {
         const signs = rank(pool.filter(q => q.subject === 'zeichen'));
@@ -879,6 +890,7 @@
     pickExamQuestions,
     EXAM_PANEL,
     examPanelFor,
+    inOralExam,
     buildExamPanel,
     gradeFromScore,
     oralExamGrades,
