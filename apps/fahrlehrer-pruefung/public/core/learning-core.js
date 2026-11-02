@@ -622,6 +622,7 @@
   // Verkehrszeichen in der mündlichen Prüfung: nur Zeichen bis 357 (Sackgasse) –
   // keine Zusatzzeichen, Sinnbilder, Markierungen ohne Zeichennummer und keine Zeichen ab 358.
   const ORAL_SIGN_MAX = 357;
+  const EXAM_REPEAT_DAYS = 21;
 
   /** Kommt die Frage in der mündlichen Prüfung dran? Allgemeine Fragen zu Zeichen bleiben. */
   function inOralExam(q) {
@@ -631,7 +632,7 @@
   }
 
   /**
-   * Fragen je Prüfer, schwächere und neue Themen zuerst (mit Zufall). Beim Rechtler
+   * Fragen je Prüfer, zufällig gemischt; kürzlich in einer Prüfung gefragte zuletzt. Beim Rechtler
    * ist etwa jede dritte Frage ein Verkehrszeichen. perSection: Vorrat je Prüfer
    * (mehr Fragen, als in die Zeit passen – die Zeit begrenzt die Prüfung).
    */
@@ -639,9 +640,16 @@
     const ts = typeof now === 'number' ? now : Date.now();
     const rand = seededRandom(`panel-${ts}`);
     const size = perSection || 12;
+    // Vor allem Zufall, schwächere Themen leicht bevorzugt. Fragen aus den Prüfungen der
+    // letzten drei Wochen kommen erst dran, wenn alle anderen durch sind (die zuletzt
+    // gefragten ganz hinten) – sonst kehren schwach beantwortete Fragen immer wieder.
+    const repeatWindow = EXAM_REPEAT_DAYS * DAY_MS;
     const rank = list => list.map(q => {
-      const m = questionMastery(state.attempts[q.id], ts);
-      return { q, key: (m === null ? 0.4 : m) + rand() * 0.3 };
+      const attempts = state.attempts[q.id] || [];
+      const m = questionMastery(attempts, ts);
+      const lastExam = attempts.reduce((t, a) => (a && a.source === 'exam' && a.ts > t ? a.ts : t), 0);
+      const recent = lastExam && ts - lastExam < repeatWindow ? 2 + (repeatWindow - (ts - lastExam)) / repeatWindow : 0;
+      return { q, key: rand() + (m === null ? 0.5 : m) * 0.5 + recent };
     }).sort((a, b) => a.key - b.key).map(x => x.q);
     return EXAM_PANEL.map(section => {
       const pool = data.questions.filter(q => examPanelFor(q) === section.id && inOralExam(q));

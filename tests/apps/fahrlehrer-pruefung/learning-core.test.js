@@ -409,6 +409,18 @@ function runTests() {
     if (recht.some(x => x.subject === 'zeichen')) assert.ok(recht[0].subject !== 'zeichen', 'starts with a law question');
   }));
 
+  results.push(test('exam panel: questions from recent exams come last, even weak ones', () => {
+    let st = Core.createState();
+    const first = Core.buildExamPanel(data, st, NOW, 4).map(s => s.ids);
+    first.flat().forEach((id, i) => { st = Core.recordAttempt(st, id, { score: 0.1, source: 'exam' }, NOW + i * 60000); });
+    const later = NOW + 2 * 86400000;
+    const second = Core.buildExamPanel(data, st, later, 4);
+    second.forEach((section, i) => {
+      const pool = data.questions.filter(x => Core.examPanelFor(x) === section.id && Core.inOralExam(x)).length;
+      if (pool >= 8) assert.ok(section.ids.every(id => !first[i].includes(id)), `${section.id}: no repeat while others are left`);
+    });
+  }));
+
   results.push(test('oral exam grades per examiner and overall', () => {
     assert.deepStrictEqual([0.92, 0.915, 0.81, 0.67, 0.5, 0.3, 0.29, 0].map(Core.gradeFromScore), [1, 1, 2, 3, 4, 5, 6, 6]);
     const sections = [

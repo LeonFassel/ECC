@@ -593,7 +593,7 @@
 
   // Originalabbildungen aus der StVO; der Alt-Text verrät die Bedeutung bewusst nicht.
   function signImages(q, alt) {
-    return q.imageSrc.map(src => `<img src="${esc(src)}" alt="${esc(alt)}" loading="lazy" decoding="async">`).join('');
+    return q.imageSrc.map(src => `<img src="${esc(src)}" alt="${esc(alt)}">`).join('');
   }
 
   function signStage(q) {
@@ -603,7 +603,7 @@
   // Abbildungen aus der Prüfungsfragen-Sammlung (z. B. Verkehrszeichen a–f, Motorraum-Skizze).
   function figureStage(q) {
     if (!q || !Array.isArray(q.figures) || q.figures.length === 0) return '';
-    return `<div class="figure-grid">${q.figures.map(f => `<figure><img src="${esc(f.src)}" alt="${esc(f.alt || 'Abbildung zur Frage')}" loading="lazy" decoding="async">${f.label ? `<figcaption>${esc(f.label)}</figcaption>` : ''}</figure>`).join('')}</div>`;
+    return `<div class="figure-grid">${q.figures.map(f => `<figure><img src="${esc(f.src)}" alt="${esc(f.alt || 'Abbildung zur Frage')}">${f.label ? `<figcaption>${esc(f.label)}</figcaption>` : ''}</figure>`).join('')}</div>`;
   }
 
   function questionStage(q) {
@@ -654,6 +654,28 @@
     render();
   }
 
+  // Beim Neuzeichnen derselben Seite (z. B. Antwort antippen) die Höhe halten, bis die
+  // Bilder wieder geladen sind – sonst wird die Seite kurz kürzer und Safari springt nach oben.
+  let scrollHold = null;
+
+  function holdScroll() {
+    scrollHold = { y: window.scrollY };
+    app.style.minHeight = `${app.offsetHeight}px`;
+  }
+
+  function releaseScroll() {
+    const hold = scrollHold;
+    window.scrollTo(0, hold.y);
+    const pending = Array.from(app.querySelectorAll('img')).filter(img => !img.complete)
+      .map(img => new Promise(resolve => {
+        img.addEventListener('load', resolve, { once: true });
+        img.addEventListener('error', resolve, { once: true });
+      }));
+    Promise.race([Promise.all(pending), new Promise(resolve => setTimeout(resolve, 1500))]).then(() => {
+      if (scrollHold === hold) app.style.minHeight = '';
+    });
+  }
+
   function render() {
     const r = route();
     const key = `${r.name}/${r.param || ''}`;
@@ -689,7 +711,10 @@
     syncSearchInput(r);
     pendingConfirm = null;
     if (key !== lastRoute && dictation) stopDictation();
+    const sameView = key === lastRoute;
+    if (sameView) holdScroll();
     app.innerHTML = (views[r.name] || renderDashboard)();
+    if (sameView) releaseScroll();
     WrittenUI.afterRender(r);
     if (r.name === 'muendlich-archiv' && !r.param) WrittenUI.wireSwipeRows();
     Games.afterRender(r);
@@ -1188,7 +1213,7 @@
   function cardFigureStage(figures) {
     if (!Array.isArray(figures) || figures.length === 0) return '';
     return `<div class="card-figures">${figures.map(f => `<figure>
-      <button type="button" class="figure-zoom" data-action="zoom-figure" aria-label="Abbildung vergrößern"><img src="${esc(f.src)}" alt="${esc(f.alt || 'Abbildung der Karte')}" loading="lazy" decoding="async"></button>
+      <button type="button" class="figure-zoom" data-action="zoom-figure" aria-label="Abbildung vergrößern"><img src="${esc(f.src)}" alt="${esc(f.alt || 'Abbildung der Karte')}"></button>
       ${f.label ? `<figcaption>${esc(f.label)} – zum Vergrößern antippen</figcaption>` : ''}</figure>`).join('')}</div>`;
   }
 
