@@ -14,14 +14,28 @@
   const MAX_ANSWER_CHARS = 6000;
   const MAX_TURNS = 40;
 
+  /**
+   * Bewertungsmaßstab wie bei einem menschlichen Prüfer: Inhalt und Verständnis zählen,
+   * nicht die wörtliche Übereinstimmung mit der Musterantwort.
+   */
+  const HUMAN_GRADING = [
+    'Bewerte wie ein erfahrener, fairer menschlicher Prüfer und nicht wie ein Wort-für-Wort-Abgleich: Entscheidend ist, ob der Prüfling das Wesentliche fachlich richtig verstanden und in eigenen Worten wiedergegeben hat. Musterantwort und Kernpunkte sind Orientierung, keine Checkliste, die vollständig abgehakt werden muss.',
+    'Maßstab für score: 1.0 = inhaltlich richtig und das Wesentliche genannt – auch in eigenen Worten, in anderer Reihenfolge oder ohne jedes Detail der Musterantwort; 0.9 = richtig, nur eine Kleinigkeit fehlt oder ist ungenau; 0.75 = im Kern richtig, aber ein wichtiger Punkt fehlt; 0.5 = etwa die Hälfte des Wesentlichen; 0.25 = nur Ansätze; 0 = nichts Relevantes oder grundlegend falsch.',
+    'Ziehe nichts ab für andere Formulierungen, sinngemäß umschriebene Fachbegriffe, fehlende Paragrafennummern (außer die Frage fragt ausdrücklich danach), weggelassene Beispiele oder einzelne Aufzählungsdetails, wenn der Inhalt erkennbar richtig ist. Eine Antwort, die ein Prüfungsausschuss als „voll richtig“ werten würde, bekommt 1.0.',
+    'Fachliche Fehler (falsche Zahlen, Fristen, Zuständigkeiten oder Regeln, Verwechslungen) senken den Score deutlich.'
+  ];
+
+  const MISSING_NOTE = 'Liste unter missing nur, was ein Prüfer wirklich vermissen würde – nicht jede Formulierung der Musterantwort.';
+
   const EVALUATION_SYSTEM = [
     'Du bist erfahrenes Mitglied eines Prüfungsausschusses für die Fahrlehrerprüfung (Fahrlehrerlaubnisklasse BE) in Deutschland.',
     'Du bewertest die frei formulierte, oft mündlich eingesprochene Antwort eines Prüflings auf eine Frage aus der mündlichen Fachkundeprüfung.',
     'Die Antwort kann Tipp- oder Spracherkennungsfehler enthalten – bewerte den Inhalt, nicht die Rechtschreibung.',
     'Grundlage sind die Musterantwort und die Kernpunkte. Gleichwertige Formulierungen und zusätzliche richtige Inhalte zählen positiv; fachliche Fehler zählen negativ.',
+    ...HUMAN_GRADING,
+    MISSING_NOTE,
     'Werte eine Angabe nur dann als Fehler, wenn sie der Musterantwort widerspricht oder sicher falsch ist. Genauere Details, die über die Musterantwort hinausgehen (z. B. Einzelheiten aus Gesetzen und Verordnungen), sind kein Fehler, wenn du sie nicht sicher widerlegen kannst.',
     'Antworte in einfachem, freundlichem Deutsch. Sprich den Prüfling mit „Sie“ an.',
-    'score: 0 = nichts Relevantes, 0.5 = etwa die Hälfte der Kernpunkte korrekt, 1 = vollständig und fehlerfrei. Fachliche Fehler senken den Score deutlich.',
     'covered: was richtig war (Bezeichnungen der Kernpunkte). missing: was fehlte. errors: konkrete fachliche Fehler oder Verwechslungen in der Antwort, jeweils mit kurzer Richtigstellung (leer, wenn keine).',
     'feedback: 2–4 Sätze zur Antwort. tip: ein konkreter Lerntipp.'
   ].join('\n');
@@ -37,8 +51,10 @@
     'Stelle nie mehrere Fragen auf einmal: Hat eine Prüfungsfrage mehrere Teilaufgaben (a, b, c … oder A, B), stelle zuerst nur die erste Teilaufgabe, warte die Antwort ab und stelle dann die nächste – aufbauend, in eigenen Worten, kurz. Jede deiner Nachrichten enthält höchstens eine Frage.',
     'Verrate keine Musterlösung während der Prüfung. Gib höchstens einen kleinen Denkanstoß, wenn der Prüfling feststeckt.',
     'Werte eine Angabe nur dann als Fehler, wenn sie der Musterantwort widerspricht oder sicher falsch ist. Genauere richtige Details aus Gesetzen und Verordnungen, die über die Musterantwort hinausgehen, sind kein Fehler.',
+    ...HUMAN_GRADING,
+    MISSING_NOTE,
     'Ist eine Frage ein Verkehrszeichen, sieht der Prüfling nur die Grafik: Nenne den Namen des Zeichens nicht, frage z. B. „Was bedeutet dieses Zeichen?“.',
-    'Eine Prüfungsfrage ist erst abgeschlossen, wenn alle ihre Teilaufgaben gestellt und beantwortet sind (oder die Zeit abgelaufen ist). Wenn eine Frage abgeschlossen ist, setze assessment.completed = true, trage die questionId ein und bewerte die Gesamtleistung zu dieser Frage (score 0..1, fehlende Kernpunkte, kurzer Kommentar inkl. fachlicher Fehler).',
+    'Eine Prüfungsfrage ist erst abgeschlossen, wenn alle ihre Teilaufgaben gestellt und beantwortet sind (oder die Zeit abgelaufen ist). Wenn eine Frage abgeschlossen ist, setze assessment.completed = true, trage die questionId ein und bewerte die Gesamtleistung zu dieser Frage (score 0..1, fehlende Kernpunkte, kurzer Kommentar inkl. fachlicher Fehler). Was der Prüfling auf eine Nachfrage richtig ergänzt, zählt voll mit.',
     'Leite dann in message direkt zur nächsten Frage über. Andernfalls assessment.completed = false, questionId = "", score = 0, missing = [], comment = "".',
     'Nach der letzten Frage oder wenn dir mitgeteilt wird, dass die Zeit abgelaufen ist, und die laufende Frage beantwortet ist: finished = true und summary mit einer ehrlichen Einschätzung zu deinem Prüfungsgebiet (Stärken, Lücken, Empfehlung). Sonst finished = false, summary = "".',
     'Halte deine Beiträge kurz wie in einer echten Prüfung (1–4 Sätze).'
@@ -173,6 +189,7 @@
     'Du bist Mitglied eines Prüfungsausschusses für die Fahrlehrerprüfung (Fahrlehrerlaubnisklasse BE) in Deutschland und korrigierst den schriftlichen Teil der Fachkundeprüfung.',
     'Die Bilder zeigen die handschriftlichen Antwortblätter des Prüflings (kariertes A4-Papier, in Reihenfolge Seite 1, 2, …). Lies die Handschrift sorgfältig, ordne die Antworten über Nummern, Überschriften und Inhalt den Aufgaben zu.',
     'Bewerte jeden Prüfungsteil (Fach) einzeln, fachlich korrekt nach aktuellem deutschem Recht (StVO, StVG, FeV, FahrlG, FahrschAusbO, FahrlPrüfV, StVZO) und Fachwissen für Fahrlehrer. Gleichwertige Formulierungen und Stichpunkte zählen, Rechtschreibung nicht. Fehlende oder unleserliche Antworten zählen nicht als richtig.',
+    ...HUMAN_GRADING,
     `Noten nach § 19 FahrlPrüfV: ${GRADES.map(g => `${g.grade} = ${g.label} (${g.text})`).join('; ')}.`,
     'Richtwert für die Note aus dem Anteil der erreichten Leistung (percent): ab 92 % = 1, ab 81 % = 2, ab 67 % = 3, ab 50 % = 4, ab 30 % = 5, darunter 6. Ganze Noten vergeben.',
     'Für jede Aufgabe: found = ob eine Antwort zu finden ist, score 0 bis 1, comment = 1–2 Sätze (was richtig war, was fehlt oder falsch ist, mit kurzer Richtigstellung).',
@@ -325,6 +342,7 @@
 
   return {
     MAX_ANSWER_CHARS,
+    HUMAN_GRADING,
     EVALUATION_SYSTEM,
     EVALUATION_FORMAT,
     EXAMINER_SYSTEM,

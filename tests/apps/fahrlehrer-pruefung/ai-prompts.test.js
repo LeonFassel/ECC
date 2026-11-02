@@ -69,6 +69,16 @@ function runTests() {
     assert.ok(Prompts.EVALUATION_SYSTEM.includes('sicher falsch'));
   }));
 
+  results.push(test('AI grading uses a human examiner scale, not a word-for-word match', () => {
+    for (const system of [Prompts.EVALUATION_SYSTEM, Prompts.EXAMINER_SYSTEM, Prompts.WRITTEN_SYSTEM]) {
+      for (const line of Prompts.HUMAN_GRADING) assert.ok(system.includes(line));
+    }
+    assert.ok(Prompts.HUMAN_GRADING.join(' ').includes('Wort-für-Wort'));
+    assert.ok(Prompts.HUMAN_GRADING.join(' ').includes('0.9 = richtig, nur eine Kleinigkeit fehlt'));
+    assert.ok(!Prompts.EVALUATION_SYSTEM.includes('1 = vollständig und fehlerfrei'));
+    assert.ok(Prompts.EXAMINER_SYSTEM.includes('auf eine Nachfrage richtig ergänzt'));
+  }));
+
   results.push(test('examiner role and time-up note for the three-examiner exam', () => {
     const role = { examiner: 'Techniker', name: 'Technik', minutes: 10, first: false };
     const plan = Prompts.examinerPlan([plain], role);

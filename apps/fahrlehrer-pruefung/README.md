@@ -106,6 +106,8 @@ hört dann automatisch weiter, bis Sie auf „Aufnahme beenden“ oder auf
 Die lokale Bewertung erkennt neben fehlenden Kernpunkten auch typische
 Fehler, z. B. „beim Stoppschild reicht langsames Durchrollen“. Verneinungen wie
 „nicht durchrollen“ werden dabei berücksichtigt.
+Bewertet wird wie bei einem menschlichen Prüfer: Wer etwa 85 % der
+Kernpunkte nennt, bekommt die volle Punktzahl, der Rest zählt anteilig.
 
 ## KI-Bewertung und KI-Prüfer aktivieren
 
@@ -125,6 +127,10 @@ ANTHROPIC_API_KEY=... npm start
 
 Mit KI-Zugang bewertet die KI Ihre freien Antworten zusätzlich. Sie erkennt
 gleichwertige Formulierungen und fachliche Fehler und gibt einen Lerntipp.
+Sie bewertet wie ein fairer Prüfungsausschuss den Inhalt, nicht den Wortlaut der
+Musterantwort: Inhaltlich richtig mit dem Wesentlichen ist 100 %, fehlt nur eine
+Kleinigkeit, sind es etwa 90 %. Im KI-Prüfer zählt, was Sie auf Nachfragen
+ergänzen, voll mit.
 Der KI-Prüfer führt eine realistische mündliche Prüfung mit individuellen
 Nachfragen und schließt mit einer Gesamteinschätzung.
 

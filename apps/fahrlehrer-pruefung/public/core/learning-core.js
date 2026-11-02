@@ -130,6 +130,8 @@
     return NEGATION.test(words);
   }
 
+  const HUMAN_FULL = 0.85;
+
   /**
    * Lokale, regelbasierte Bewertung einer frei formulierten Antwort.
    * Ein Kernpunkt gilt als genannt, wenn eines seiner Schlüsselwörter vorkommt.
@@ -154,7 +156,10 @@
     }
 
     const total = question.keyPoints.length || 1;
-    let score = covered.length / total;
+    // Wie ein menschlicher Prüfer: Wer fast alles nennt, ist voll richtig. Die volle Punktzahl
+    // gibt es ab HUMAN_FULL der Kernpunkte; der Rest wird anteilig hochgerechnet
+    // (4 von 5 Punkten = 0.94, 3 von 4 = 0.88, 2 von 3 = 0.78, 1 von 2 = 0.59).
+    let score = Math.min(1, covered.length / total / HUMAN_FULL);
     // Sehr kurze Antworten können Schlüsselwörter zufällig enthalten – leicht abwerten.
     if (words > 0 && words < 8) score *= 0.8;
     score -= Math.min(0.45, wrong.length * 0.15);

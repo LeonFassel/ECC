@@ -243,6 +243,21 @@ function runTests() {
     assert.ok(ev.score > 0 && ev.score < 1);
   }));
 
+  results.push(test('evaluateAnswer grades like a human examiner: nearly complete counts as full', () => {
+    const point = (label, word) => ({ label, keywords: [word] });
+    const item = {
+      id: 'x', keyPoints: [point('A', 'anhalten'), point('B', 'blinken'), point('C', 'schauen'), point('D', 'warten'), point('E', 'fahren')],
+      wrongClaims: []
+    };
+    const answer = words => `Zuerst muss man hier ${words} und dabei ruhig bleiben.`;
+    assert.strictEqual(Core.evaluateAnswer(item, answer('anhalten, blinken, schauen, warten, fahren')).score, 1);
+    const four = Core.evaluateAnswer(item, answer('anhalten, blinken, schauen, warten'));
+    assert.ok(four.score >= 0.9 && four.score < 1, `4 of 5 scores ${four.score}`);
+    assert.deepStrictEqual(four.missing, ['E']);
+    const half = Core.evaluateAnswer(item, answer('anhalten und blinken'));
+    assert.ok(half.score > 0.4 && half.score < 0.6, `2 of 5 scores ${half.score}`);
+  }));
+
   results.push(test('evaluateAnswer handles umlauts and empty answers', () => {
     assert.strictEqual(Core.normalize('Überholen Straße'), 'ueberholen strasse');
     const ev = Core.evaluateAnswer(q('verhalten-01'), '');
