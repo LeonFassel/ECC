@@ -15,6 +15,9 @@
   const ORAL_STORE = 'fl-oral-v1';
   const ORAL_LIMIT = 40;
   const VOICE_STORE = 'fl-voice-v1';
+  // Karteikarten: Verkehrszeichen mit Namen statt Nummer („Z 205“ → „Vorfahrt gewähren“).
+  const SIGN_NAMES = new Map(signs.map(s => [s.sign, s.name]).concat([['720', 'Grünpfeil'], ['721', 'Grünpfeil für den Radverkehr']]));
+  questions.filter(q => q.collection === 'karteikarten').forEach(q => Core.withSignNames(q, SIGN_NAMES));
   const questionById = new Map(questions.map(q => [q.id, q]));
   const subjectById = new Map(subjects.map(s => [s.id, s]));
   const app = document.getElementById('app');

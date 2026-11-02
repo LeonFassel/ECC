@@ -1038,6 +1038,105 @@
     return Object.assign(result, { missing: [], feedback: buildFeedback(result.score, [], result.wrong) });
   }
 
+  // ------------------------------------------------------------------ Zeichennamen statt Nummern
+
+  const SIGN_NUM = '\\d{3}(?:\\.\\d{1,2})?';
+  const SIGN_REF = new RegExp(
+    `(\\b(?:Verkehrszeichen|Zeichen)\\s|\\b(?:VZ|Z\\.?)\\s?)(${SIGN_NUM}(?:\\s?(?:,|\\/|und|oder|bzw\\.)\\s?(?:Z\\.?\\s?)?${SIGN_NUM})*)(?![\\d.,]?\\d|\\s?[–-]\\s?\\d)(\\s\\([^()\\n]{1,60}\\))?`,
+    'g'
+  );
+  const DROP = '\u0000';
+  const DASH = '\u0001';
+
+  const STOP_WORDS = new Set(['fuer', 'mit', 'und', 'oder', 'bei', 'der', 'die', 'das', 'des', 'dem', 'den', 'ein', 'eine', 'einer', 'eines', 'ueber', 'unter', 'vor', 'nach', 'auf', 'aus', 'von', 'zum', 'zur', 'nur', 'auch', 'wird', 'ist']);
+
+  /** Wortstamm zum Vergleichen (erste fünf Buchstaben); Füllwörter zählen nicht. */
+  function stem(word) {
+    const w = normalize(word).replace(/[^a-z0-9]/g, '');
+    return STOP_WORDS.has(w) ? '' : w.slice(0, 5);
+  }
+
+  /** Steht der Name direkt vor der Nummer („Leitlinie (Z 340)“, „Ortstafel Z 310“, „„Kinder“ (Zeichen 136)“)? */
+  function namedBefore(before, name) {
+    if (normalize(before).replace(/[\s(„“"]+$/, '').endsWith(normalize(name))) return true;
+    const m = /([^\s;:,.()–-]+)\s\($/.exec(before) || /([^\s;:,.()–-]+)\s$/.exec(before);
+    return Boolean(m) && namesSign(m[1].replace(/[„“"]/g, ''), name);
+  }
+
+  /** Steht der Zeichenname schon im Text („Leitlinie“, „(Bahnübergang)“, „„Tunnel““, „– den Grünpfeil …“)? */
+  function namesSign(text, name) {
+    const words = String(text).trim().split(/\s+/);
+    if (/^„/.test(words[0] || '')) return true;
+    // Gedankenstrich und Artikel überspringen („Z 721 – den Grünpfeil …“), höchstens zwei Wörter.
+    let i = 0;
+    while (i < 2 && i < words.length - 1 && (/^[–-]$/.test(words[i]) || (!stem(words[i]) && /^[a-zäöü]+$/i.test(words[i])))) i += 1;
+    const key = stem(words[i] || '');
+    return key.length >= 4 && normalize(name).split(/[\s-]+/).some(w => w.length >= 4 && stem(w) === key);
+  }
+
+  /**
+   * Zeichennummern durch Namen ersetzen: „Z 205“ → „„Vorfahrt gewähren““, „Zeichen 268“ →
+   * „Zeichen „Schneeketten vorgeschrieben““. Steht der Name schon daneben, fällt nur die Nummer weg.
+   * names: Map Nummer → Name. Unbekannte Nummern, Bereiche („278–282“) und „Zeichen 136 bedeutet …“
+   * (die Nummer ist dort der Inhalt) bleiben unverändert.
+   */
+  function signNamesInText(text, names) {
+    const source = String(text || '');
+    let changed = false;
+    const out = source.replace(SIGN_REF, (match, prefix, list, paren, offset) => {
+      const numbers = list.match(new RegExp(SIGN_NUM, 'g'));
+      const found = numbers.map(n => names.get(n));
+      if (found.some(n => !n)) return match;
+      const after = source.slice(offset + match.length);
+      const before = source.slice(Math.max(0, offset - 80), offset);
+      const word = /zeichen/i.test(prefix) ? 'Zeichen ' : '';
+      changed = true;
+      if (numbers.length > 1) {
+        if (new Set(found).size === 1) return `${word}„${found[0]}“${paren || ''}`;
+        const seps = list.split(new RegExp(`(?:Z\\.?\\s?)?${SIGN_NUM}`)).slice(1, -1).map(sep => (sep.trim() === '/' ? ' bzw. ' : sep));
+        return word + found.map((n, i) => `„${n}“${i < seps.length ? seps[i] : ''}`).join('') + (paren || '');
+      }
+      const name = found[0];
+      if (!paren && /^\s+(?:bedeutet|heißt)\s+„/.test(after)) {
+        changed = false;
+        return match;
+      }
+      if (namedBefore(before, name)) return before.endsWith('(') && after.startsWith(')') && !paren ? DROP : (paren || '');
+      if (paren) {
+        const inner = paren.trim().slice(1, -1);
+        return namesSign(inner, name) ? `${word}„${inner}“` : `${word}„${name}“${paren}`;
+      }
+      if (namesSign(after, name)) return /^\s[–-]\s/.test(after) ? DASH : word.trim();
+      return `${word}„${name}“`;
+    });
+    if (!changed) return source;
+    return out
+      .replace(new RegExp(`\\s?\\(${DROP}\\)`, 'g'), '')
+      .split(DROP).join('')
+      .replace(new RegExp(`${DASH}\\s[–-]\\s`, 'g'), '')
+      .split(DASH).join('')
+      .replace(/[ \t]{2,}/g, ' ')
+      .replace(/^[ \t]+|[ \t]+$/gm, '')
+      .replace(/\(\s*,?\s*/g, '(')
+      .replace(/ ([),.;:])/g, '$1');
+  }
+
+  /** Karteikarte mit Zeichennamen statt Nummern (Vorder-, Rückseite, Ankreuz-Frage und -Antworten, Kernpunkte). */
+  function withSignNames(q, names) {
+    const fix = text => (typeof text === 'string' ? signNamesInText(text, names) : text);
+    q.question = fix(q.question);
+    q.modelAnswer = fix(q.modelAnswer);
+    q.explanation = fix(q.explanation);
+    q.example = fix(q.example);
+    if (q.mc) {
+      q.mc.prompt = fix(q.mc.prompt);
+      if (Array.isArray(q.mc.options)) q.mc.options.forEach(o => { o.text = fix(o.text); });
+    }
+    // Bezeichnungen der Kernpunkte erscheinen in der Rückmeldung („Ergänzen Sie noch: …“).
+    (q.keyPoints || []).concat(q.wrongClaims || []).forEach(p => { p.label = fix(p.label); });
+    return q;
+  }
+
   function examVerdict(scores) {
     if (!scores.length) return { avg: 0, label: 'Keine Bewertung', passed: false };
     const avg = round2(scores.reduce((a, b) => a + b, 0) / scores.length);
@@ -1087,6 +1186,8 @@
     examPartTexts,
     keyPointsForParts,
     examQuestion,
+    signNamesInText,
+    withSignNames,
     examVerdict
   };
 });

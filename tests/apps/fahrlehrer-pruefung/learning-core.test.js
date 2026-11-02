@@ -580,6 +580,40 @@ function runTests() {
     assert.ok(!/: \./.test(ev.feedback));
   }));
 
+  results.push(test('flash cards show sign names instead of numbers', () => {
+    const names = new Map([['205', 'Vorfahrt gewähren'], ['206', 'Halt. Vorfahrt gewähren'], ['151', 'Bahnübergang'], ['156', 'Bahnübergang mit dreistreifiger Bake'],
+      ['268', 'Schneeketten vorgeschrieben'], ['340', 'Leitlinie'], ['306', 'Vorfahrtstraße'], ['136', 'Kinder'], ['327', 'Tunnel'], ['293', 'Fußgängerüberweg'], ['350', 'Fußgängerüberweg'],
+      ['276', 'Überholverbot für Kraftfahrzeuge aller Art'], ['277', 'Überholverbot für Kraftfahrzeuge über 3,5 t'], ['721', 'Grünpfeil für den Radverkehr']]);
+    const cases = [
+      ['Pflicht bei Zeichen 268, auch für Allradfahrzeuge', 'Pflicht bei Zeichen „Schneeketten vorgeschrieben“, auch für Allradfahrzeuge'],
+      ['Auf der Spitze stehendes Quadrat: Zeichen 205', 'Auf der Spitze stehendes Quadrat: Zeichen „Vorfahrt gewähren“'],
+      ['An Bahnübergängen ab Z 151/156', 'An Bahnübergängen ab „Bahnübergang“ bzw. „Bahnübergang mit dreistreifiger Bake“'],
+      ['Verkehrszeichen (Z 205, 206, 306) regeln', 'Verkehrszeichen („Vorfahrt gewähren“, „Halt. Vorfahrt gewähren“, „Vorfahrtstraße“) regeln'],
+      ['Z 340 Leitlinie', 'Leitlinie'],
+      ['durch Leitlinie (Z 340) markiert', 'durch Leitlinie markiert'],
+      ['Zeichen 327 „Tunnel“ (Anlage 3)', 'Zeichen „Tunnel“ (Anlage 3)'],
+      ['z. B. „Kinder“ (Zeichen 136) oder', 'z. B. „Kinder“ oder'],
+      ['an Fußgängerüberwegen (Z 293/350, § 26)', 'an Fußgängerüberwegen („Fußgängerüberweg“, § 26)'],
+      ['Ortsdurchfahrten; Z 306 gilt weiter.', 'Ortsdurchfahrten; „Vorfahrtstraße“ gilt weiter.'],
+      ['Z 277 (für Kfz über 3,5 t)', '„Überholverbot für Kraftfahrzeuge über 3,5 t“ (für Kfz über 3,5 t)'],
+      ['Überholverbot für Kraftfahrzeuge aller Art VZ 276', 'Überholverbot für Kraftfahrzeuge aller Art'],
+      ['zusätzlich Z 721 – den Grünpfeil nur für den Radverkehr.', 'zusätzlich den Grünpfeil nur für den Radverkehr.'],
+      ['Zeichen 136 bedeutet „Kinder“', 'Zeichen 136 bedeutet „Kinder“'],
+      ['Ende durch Z 278–282 oder', 'Ende durch Z 278–282 oder'],
+      ['Zusatzzeichen 1000-10 und Zeichen 999', 'Zusatzzeichen 1000-10 und Zeichen 999'],
+      ['§ 41 Abs. 1 und Anlage 2', '§ 41 Abs. 1 und Anlage 2']
+    ];
+    for (const [input, expected] of cases) assert.strictEqual(Core.signNamesInText(input, names), expected, input);
+    const card = { question: 'Was gilt bei Z 268?', modelAnswer: 'Z 268 „Schneeketten vorgeschrieben“', keyPoints: [{ label: 'Pflicht bei Z 268', keywords: ['268'] }], mc: { prompt: 'Was gilt bei Zeichen 268?', options: [{ text: 'Bei Zeichen 268 sind Allradfahrzeuge befreit', correct: false }] } };
+    Core.withSignNames(card, names);
+    assert.strictEqual(card.question, 'Was gilt bei „Schneeketten vorgeschrieben“?');
+    assert.strictEqual(card.modelAnswer, '„Schneeketten vorgeschrieben“');
+    assert.strictEqual(card.mc.options[0].text, 'Bei Zeichen „Schneeketten vorgeschrieben“ sind Allradfahrzeuge befreit');
+    assert.strictEqual(card.mc.prompt, 'Was gilt bei Zeichen „Schneeketten vorgeschrieben“?');
+    assert.strictEqual(card.keyPoints[0].label, 'Pflicht bei „Schneeketten vorgeschrieben“');
+    assert.deepStrictEqual(card.keyPoints[0].keywords, ['268'], 'keywords stay for grading');
+  }));
+
   results.push(test('examVerdict grades the simulation', () => {
     assert.strictEqual(Core.examVerdict([0.9, 0.8, 0.85]).passed, true);
     assert.strictEqual(Core.examVerdict([0.2, 0.3, 0.9]).passed, false);
