@@ -348,6 +348,10 @@ textarea { min-height: 150px; resize: vertical; }
 }
 
 .btn.mic .nav-icon { width: 20px; height: 20px; }
+.voice-row { margin: 4px 0 10px; }
+.voice-toggle .nav-icon { width: 18px; height: 18px; }
+.voice-toggle:not(.on) .wave { opacity: .25; }
+.voice-toggle.on { background: var(--primary-soft); border-color: transparent; color: var(--primary); }
 .btn.mic.recording { background: var(--bad); border-color: var(--bad); color: #fff; animation: pulse 1.4s ease-in-out infinite; }
 @keyframes pulse { 50% { box-shadow: 0 0 0 6px var(--bad-soft); } }
 

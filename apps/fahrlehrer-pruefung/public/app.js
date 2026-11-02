@@ -8,11 +8,13 @@
   const WrittenUI = window.FLWrittenUI;
   const Games = window.FLGames;
   const Search = window.FLSearch;
+  const Speech = window.FLSpeech;
   const { subjects, questions, signs } = window.FLData;
   const decks = window.FLData.decks || [];
   const STORAGE_KEY = 'fl-pruefung-state-v1';
   const ORAL_STORE = 'fl-oral-v1';
   const ORAL_LIMIT = 40;
+  const VOICE_STORE = 'fl-voice-v1';
   const questionById = new Map(questions.map(q => [q.id, q]));
   const subjectById = new Map(subjects.map(s => [s.id, s]));
   const app = document.getElementById('app');
@@ -36,6 +38,14 @@
   let searchAiTimer = 0;
   const searchAnswers = new Map();
   const searchInput = document.getElementById('topsearch-input');
+  // Vorlesen in der mündlichen Prüfung: jeder Prüfer mit eigener Stimme.
+  const speaker = Speech.createSpeaker({
+    synth: 'speechSynthesis' in window ? window.speechSynthesis : null,
+    Utterance: window.SpeechSynthesisUtterance,
+    ids: Core.EXAM_PANEL.map(p => p.id),
+    onChange: refreshVoiceButtons
+  });
+  let voiceOn = loadVoiceSetting();
 
   // ------------------------------------------------------------------ Speicher
 
@@ -52,6 +62,22 @@
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     } catch (_err) {
       toast('Fortschritt konnte nicht gespeichert werden (privater Modus?).');
+    }
+  }
+
+  function loadVoiceSetting() {
+    try {
+      return window.localStorage.getItem(VOICE_STORE) !== 'off';
+    } catch (_err) {
+      return true;
+    }
+  }
+
+  function saveVoiceSetting() {
+    try {
+      window.localStorage.setItem(VOICE_STORE, voiceOn ? 'on' : 'off');
+    } catch (_err) {
+      // Nur eine Komfort-Einstellung – ohne Speicher gilt sie bis zum Neuladen.
     }
   }
 
@@ -711,6 +737,7 @@
     syncSearchInput(r);
     pendingConfirm = null;
     if (key !== lastRoute && dictation) stopDictation();
+    if (key !== lastRoute && r.name !== 'pruefung') speaker.stop();
     const sameView = key === lastRoute;
     if (sameView) holdScroll();
     app.innerHTML = (views[r.name] || renderDashboard)();
@@ -1795,6 +1822,7 @@
         ${exam.error ? `<div class="panel bad"><p>${esc(exam.error)}</p><button class="btn" data-action="exam-retry">Erneut versuchen</button></div>` : ''}
         <div id="exam-timeup">${section.timeUp && !exam.loading ? timeUpNotice(section) : ''}</div>
         ${questionStage(currentExamQuestion())}
+        ${voiceControls()}
         <label for="exam-answer" class="kpi-label">Ihre Antwort – tippen oder einsprechen</label>
         <textarea id="exam-answer" data-input="exam-answer" placeholder="Antworten Sie so, wie Sie es in der Prüfung sagen würden …" ${exam.loading ? 'disabled' : ''}>${esc(exam.draft)}</textarea>
         ${answerTools('exam', 'exam-send', 'Antwort abgeben')}
@@ -1835,6 +1863,8 @@
           <option value="10" selected>10 Minuten je Prüfer – wie in echt (30 Minuten)</option>
           <option value="5">5 Minuten je Prüfer – Kurztraining (15 Minuten)</option>
         </select>
+        ${speaker.supported ? `<label class="option" style="margin-top:14px"><input type="checkbox" id="exam-voice" ${voiceOn ? 'checked' : ''}>
+          <span><strong>Prüfer lesen laut vor</strong><br><span class="small muted">Fragen und Nachfragen kommen über den Lautsprecher – wie im Gespräch. Jeder Prüfer hat eine eigene Stimme.</span></span></label>` : ''}
         <div class="btn-row"><button class="btn primary" data-action="exam-start">Prüfung starten</button></div>
         <p class="small muted" style="margin-top:12px">Tipp: Antworten Sie strukturiert – erst die Kernaussage, dann Rechtsgrundlage, dann ein Praxisbeispiel.</p>
       </div>`;
@@ -2043,6 +2073,12 @@
     const minutesInput = document.getElementById('exam-minutes');
     const mode = modeInput && modeInput.value === 'ai' && aiStatus.ai ? 'ai' : 'local';
     const minutes = Number(minutesInput ? minutesInput.value : 10) === 5 ? 5 : 10;
+    const voiceInput = document.getElementById('exam-voice');
+    if (voiceInput && voiceInput.checked !== voiceOn) {
+      voiceOn = voiceInput.checked;
+      saveVoiceSetting();
+    }
+    if (voiceOn) speaker.unlock();
     const sections = Core.buildExamPanel(window.FLData, state, now(), 14).map(s => Object.assign(s, {
       index: 0, part: 0, round: 0, answers: [], transcript: [], results: [], summary: '',
       startedAt: 0, endsAt: 0, endedAt: 0, timeUp: false, overtime: 0, done: false
@@ -2060,6 +2096,37 @@
     const turn = { role: 'examiner', who: section.examiner, text };
     section.transcript.push(turn);
     exam.transcript.push(turn);
+    speakExaminer(section, text);
+  }
+
+  /** Der Prüfer spricht: laufendes Diktat vorher beenden, sonst nimmt das Mikrofon ihn mit auf. */
+  function speakExaminer(section, text) {
+    if (!voiceOn || !speaker.supported) return;
+    if (dictation) stopDictation();
+    speaker.speak(text, section.id);
+  }
+
+  function lastExaminerTurn() {
+    const section = examSection();
+    const turns = section ? section.transcript.filter(t => t.role === 'examiner') : [];
+    return turns.length ? { section, text: turns[turns.length - 1].text } : null;
+  }
+
+  const SPEAKER_ICON = '<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z"/><path class="wave" d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/></svg>';
+
+  /** Schalter „Vorlesen“ und „Nochmal vorlesen/Stoppen“ unter dem Gespräch. */
+  function voiceControls() {
+    if (!speaker.supported) return '';
+    const speaking = speaker.isSpeaking();
+    return `<div class="btn-row voice-row">
+        <button type="button" class="btn small-btn voice-toggle${voiceOn ? ' on' : ''}" data-action="voice-toggle" aria-pressed="${voiceOn}">${SPEAKER_ICON}<span>Vorlesen ${voiceOn ? 'an' : 'aus'}</span></button>
+        <button type="button" class="btn small-btn" data-action="voice-replay" ${voiceOn ? '' : 'hidden'}>${speaking ? 'Vorlesen stoppen' : 'Nochmal vorlesen'}</button>
+      </div>`;
+  }
+
+  function refreshVoiceButtons() {
+    const btn = document.querySelector('[data-action="voice-replay"]');
+    if (btn) btn.textContent = speaker.isSpeaking() ? 'Vorlesen stoppen' : 'Nochmal vorlesen';
   }
 
   function startSection(i) {
@@ -2471,6 +2538,7 @@
       startPractice(pool.map(item => item.id), group ? `Zeichen-Training – ${group.label}` : 'Verkehrszeichen-Training');
     },
     mic: el => {
+      speaker.stop();
       if (dictation && dictation.target === el.dataset.target && !dictation.stopping) stopDictation();
       else startDictation(el.dataset.target);
     },
@@ -2482,10 +2550,35 @@
     'ai-evaluate': () => requestAiEvaluation(),
     rate: el => rate(Number(el.dataset.score)),
     'exam-start': startExam,
-    'exam-send': () => stopDictation(sendExamAnswer),
+    'exam-send': () => {
+      speaker.stop();
+      if (voiceOn) speaker.unlock();
+      stopDictation(sendExamAnswer);
+    },
+    'voice-toggle': () => {
+      voiceOn = !voiceOn;
+      saveVoiceSetting();
+      if (voiceOn) {
+        speaker.unlock();
+        const last = lastExaminerTurn();
+        if (last) speaker.speak(last.text, last.section.id);
+      } else {
+        speaker.stop();
+      }
+      render();
+    },
+    'voice-replay': () => {
+      if (speaker.isSpeaking()) {
+        speaker.stop();
+        return;
+      }
+      const last = lastExaminerTurn();
+      if (last) speaker.speak(last.text, last.section.id);
+    },
     'exam-retry': () => aiExamTurn(),
     'exam-next-section': () => nextExamSection(),
     'exam-abort': () => {
+      speaker.stop();
       stopExamClock();
       if (examResults().length === 0) exam = null;
       else {
@@ -2506,6 +2599,7 @@
       render();
     },
     'exam-new': () => {
+      speaker.stop();
       stopExamClock();
       exam = null;
       render();

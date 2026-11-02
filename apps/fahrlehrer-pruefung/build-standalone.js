@@ -32,6 +32,7 @@ const SCRIPTS = [
   'core/written-exam.js',
   'core/games-core.js',
   'core/search-core.js',
+  'core/speech-core.js',
   'ink.js',
   'written-ui.js',
   'games.js',
