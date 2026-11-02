@@ -32,6 +32,15 @@ module.exports = [
         }
     },
     {
+        files: ['apps/fahrlehrer-pruefung/public/**/*.js'],
+        languageOptions: {
+            sourceType: 'script',
+            globals: {
+                ...globals.browser
+            }
+        }
+    },
+    {
         files: ['**/*.mjs'],
         languageOptions: {
             sourceType: 'module'
