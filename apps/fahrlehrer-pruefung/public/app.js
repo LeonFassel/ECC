@@ -1863,8 +1863,7 @@
           <option value="10" selected>10 Minuten je Prüfer – wie in echt (30 Minuten)</option>
           <option value="5">5 Minuten je Prüfer – Kurztraining (15 Minuten)</option>
         </select>
-        ${speaker.supported ? `<label class="option" style="margin-top:14px"><input type="checkbox" id="exam-voice" ${voiceOn ? 'checked' : ''}>
-          <span><strong>Prüfer lesen laut vor</strong><br><span class="small muted">Fragen und Nachfragen kommen über den Lautsprecher – wie im Gespräch. Jeder Prüfer hat eine eigene Stimme.</span></span></label>` : ''}
+        ${voiceIntro()}
         <div class="btn-row"><button class="btn primary" data-action="exam-start">Prüfung starten</button></div>
         <p class="small muted" style="margin-top:12px">Tipp: Antworten Sie strukturiert – erst die Kernaussage, dann Rechtsgrundlage, dann ein Praxisbeispiel.</p>
       </div>`;
@@ -2122,6 +2121,34 @@
         <button type="button" class="btn small-btn voice-toggle${voiceOn ? ' on' : ''}" data-action="voice-toggle" aria-pressed="${voiceOn}">${SPEAKER_ICON}<span>Vorlesen ${voiceOn ? 'an' : 'aus'}</span></button>
         <button type="button" class="btn small-btn" data-action="voice-replay" ${voiceOn ? '' : 'hidden'}>${speaking ? 'Vorlesen stoppen' : 'Nochmal vorlesen'}</button>
       </div>`;
+  }
+
+  /** Startseite: Schalter „Prüfer lesen laut vor“ mit Probe – oder ein Hinweis, wenn die Ansicht keine Sprachausgabe hat. */
+  function voiceIntro() {
+    if (!speaker.supported) {
+      return `<div class="panel warn" style="margin-top:14px"><h3>Vorlesen hier nicht verfügbar</h3>
+        <p>Diese Ansicht bietet keine Sprachausgabe an. Öffnen Sie die App im Browser (z. B. Safari) über die Website – dort lesen die Prüfer vor.</p></div>`;
+    }
+    return `<label class="option" style="margin-top:14px"><input type="checkbox" id="exam-voice" ${voiceOn ? 'checked' : ''}>
+        <span><strong>Prüfer lesen laut vor</strong><br><span class="small muted">Fragen und Nachfragen kommen über den Lautsprecher – wie im Gespräch. Jeder Prüfer hat eine eigene Stimme.</span></span></label>
+      <div class="btn-row voice-row"><button type="button" class="btn small-btn" data-action="voice-test">${SPEAKER_ICON}<span>Stimme testen</span></button></div>
+      <p class="small muted" id="voice-status" aria-live="polite"></p>`;
+  }
+
+  const VOICE_TEST_TEXT = {
+    started: name => `Die Sprachausgabe läuft${name ? ` (Stimme: ${name})` : ''}. Hören Sie nichts, prüfen Sie Lautstärke und Stummschaltung des Geräts.`,
+    silent: () => 'Die Sprachausgabe reagiert in dieser Ansicht nicht – sie wird hier vermutlich blockiert. Öffnen Sie die App im Browser (z. B. Safari) über die Website.',
+    error: code => `Die Sprachausgabe hat abgebrochen (Fehler: ${code}). Öffnen Sie die App im Browser (z. B. Safari) über die Website oder prüfen Sie die Stimmen in den Geräteeinstellungen.`,
+    unsupported: () => 'Diese Ansicht bietet keine Sprachausgabe an.'
+  };
+
+  function testVoice() {
+    const status = document.getElementById('voice-status');
+    if (status) status.textContent = 'Test läuft …';
+    speaker.test('Guten Tag, nehmen Sie bitte Platz. So klinge ich in der Prüfung.', Core.EXAM_PANEL[0].id, (result, detail) => {
+      const el = document.getElementById('voice-status');
+      if (el) el.textContent = VOICE_TEST_TEXT[result](detail);
+    });
   }
 
   function refreshVoiceButtons() {
@@ -2567,6 +2594,7 @@
       }
       render();
     },
+    'voice-test': () => testVoice(),
     'voice-replay': () => {
       if (speaker.isSpeaking()) {
         speaker.stop();

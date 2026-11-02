@@ -179,7 +179,7 @@
 
     function send(u) {
       try {
-        if (typeof synth.resume === 'function') synth.resume();
+        if (synth.paused && typeof synth.resume === 'function') synth.resume();
         synth.speak(u);
       } catch (_err) {
         alive.delete(u);
@@ -248,6 +248,44 @@
       }
     }
 
+    /**
+     * Probe aus einem Tippen heraus: meldet über report(status, detail), ob die Ausgabe startet.
+     * status: 'unsupported' | 'started' | 'error' (detail = Fehlercode) | 'silent' (keine Rückmeldung).
+     */
+    function test(text, who, report, waitMs) {
+      if (!supported) {
+        report('unsupported');
+        return;
+      }
+      stop();
+      refreshVoices();
+      const profile = profiles[who] || null;
+      const u = utterance(speechText(text), profile);
+      let settled = false;
+      const settle = (status, detail) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        report(status, detail);
+      };
+      const timer = setTimeout(() => settle('silent'), waitMs || 3000);
+      u.onstart = () => settle('started', profile && profile.voice ? profile.voice.name : '');
+      u.onend = () => {
+        alive.delete(u);
+        notify();
+        settle('started', profile && profile.voice ? profile.voice.name : '');
+      };
+      u.onerror = event => {
+        alive.delete(u);
+        notify();
+        settle('error', event && event.error ? String(event.error) : 'unbekannt');
+      };
+      alive.add(u);
+      unlocked = true;
+      send(u);
+      notify();
+    }
+
     if (supported && typeof synth.addEventListener === 'function') {
       try { synth.addEventListener('voiceschanged', refreshVoices); } catch (_err) { /* älterer Browser */ }
     }
@@ -257,6 +295,7 @@
       speak,
       stop,
       unlock,
+      test,
       refreshVoices,
       isSpeaking: () => alive.size > 0,
       profiles: () => profiles

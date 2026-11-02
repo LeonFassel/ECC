@@ -140,6 +140,21 @@ async function runTests() {
     silent.unlock();
   }));
 
+  results.push(await test('voice test reports started, error, silence and missing support', async () => {
+    const synth = fakeSynth([voice('Markus', 'de-DE')]);
+    const speaker = Speech.createSpeaker({ synth, Utterance, ids: ['recht'] });
+    const seen = [];
+    speaker.test('Probe', 'recht', (status, detail) => seen.push([status, detail]), 50);
+    synth.spoken[0].onstart();
+    synth.spoken[0].onend();
+    speaker.test('Probe', 'recht', (status, detail) => seen.push([status, detail]), 50);
+    synth.spoken[1].onerror({ error: 'not-allowed' });
+    speaker.test('Probe', 'recht', (status, detail) => seen.push([status, detail]), 50);
+    await new Promise(resolve => setTimeout(resolve, 80));
+    Speech.createSpeaker({ synth: null, ids: ['recht'] }).test('Probe', 'recht', status => seen.push([status]));
+    assert.deepStrictEqual(seen, [['started', 'Markus'], ['error', 'not-allowed'], ['silent', undefined], ['unsupported']]);
+  }));
+
   const passed = results.filter(Boolean).length;
   const failed = results.length - passed;
   console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
