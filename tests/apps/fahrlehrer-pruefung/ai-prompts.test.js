@@ -69,6 +69,17 @@ function runTests() {
     assert.ok(Prompts.EVALUATION_SYSTEM.includes('sicher falsch'));
   }));
 
+  results.push(test('examiner stays in its field, asks only the planned parts and few follow-ups', () => {
+    assert.ok(Prompts.EXAMINER_SYSTEM.includes('Bleibe strikt in deinem Prüfungsgebiet'));
+    assert.ok(Prompts.EXAMINER_SYSTEM.includes('keine Fahrzeugtechnik'));
+    assert.ok(Prompts.EXAMINER_SYSTEM.includes('nur die im Plan genannten Teilaufgaben'));
+    assert.ok(Prompts.EXAMINER_SYSTEM.includes('höchstens einmal kurz nach'));
+    assert.ok(!Prompts.EXAMINER_SYSTEM.includes('ein- bis zweimal'));
+    const brief = Prompts.questionBrief(Object.assign({}, data.questions[0], { partNote: 'Nur Teil b.' }));
+    assert.ok(brief.includes('Hinweis: Nur Teil b.'));
+    assert.ok(!Prompts.questionBrief(data.questions[0]).includes('Hinweis:'));
+  }));
+
   results.push(test('AI grading uses a human examiner scale, not a word-for-word match', () => {
     for (const system of [Prompts.EVALUATION_SYSTEM, Prompts.EXAMINER_SYSTEM, Prompts.WRITTEN_SYSTEM]) {
       for (const line of Prompts.HUMAN_GRADING) assert.ok(system.includes(line));

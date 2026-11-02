@@ -342,9 +342,10 @@
   async function aiExamine(ids, history, panel) {
     const p = panel || {};
     if (aiStatus.mode === 'server') {
-      return postJson('api/examiner', { questionIds: ids, history, panel: p.panel, minutes: p.minutes, first: p.first, timeUp: p.timeUp, wrapUp: p.wrapUp, next: p.next });
+      return postJson('api/examiner', { questionIds: ids, parts: p.parts, history, panel: p.panel, minutes: p.minutes, first: p.first, timeUp: p.timeUp, wrapUp: p.wrapUp, next: p.next });
     }
-    const list = ids.map(id => questionById.get(id)).filter(Boolean);
+    // Nur die gewählten Teilaufgaben samt passenden Kernpunkten an den KI-Prüfer.
+    const list = ids.map(id => questionById.get(id)).filter(Boolean).map(q => Core.examQuestion(q, (p.parts || {})[q.id]));
     const section = Core.EXAM_PANEL.find(s => s.id === p.panel);
     const next = Core.EXAM_PANEL.find(s => s.id === p.next) || (p.next === '' ? null : undefined);
     const options = section
@@ -1707,7 +1708,7 @@
   // eigener Prüfungszeit. Ist die Zeit um, wird keine neue Frage mehr gestellt; die
   // laufende Antwort darf noch zu Ende gegeben werden, dann kommt der nächste Prüfer.
 
-  const MAX_AI_SECTION_QUESTIONS = 8;
+  const MAX_AI_SECTION_QUESTIONS = 12;
 
   function examSection() {
     return exam ? exam.sections[exam.current] : null;
@@ -2078,8 +2079,10 @@
       saveVoiceSetting();
     }
     if (voiceOn) speaker.unlock();
-    const sections = Core.buildExamPanel(window.FLData, state, now(), 14).map(s => Object.assign(s, {
-      index: 0, part: 0, round: 0, answers: [], transcript: [], results: [], summary: '',
+    // Vorrat je Prüfer: mehr Fragen, als in die Zeit passen. parts: welche Teilaufgaben je Frage
+    // gestellt werden (bei mehrteiligen Fragen nur ein oder zwei, jedes Mal andere).
+    const sections = Core.buildExamPanel(window.FLData, state, now(), 20).map(s => Object.assign(s, {
+      parts: examPartPlan(s), index: 0, part: 0, round: 0, answers: [], transcript: [], results: [], summary: '',
       startedAt: 0, endsAt: 0, endedAt: 0, timeUp: false, overtime: 0, done: false
     }));
     if (!sections.length) {
@@ -2172,11 +2175,25 @@
     render();
   }
 
-  /** Teilfragen einer Prüfungsfrage – der Prüfer stellt sie nacheinander. */
+  function examPartPlan(section) {
+    const plan = {};
+    section.ids.forEach(id => {
+      const q = questionById.get(id);
+      if (q) plan[id] = Core.pickExamParts(q, Math.random, section.id);
+    });
+    return plan;
+  }
+
+  function plannedParts(q) {
+    const section = examSection();
+    return section && section.parts ? section.parts[q.id] : null;
+  }
+
+  /** Gestellte Teilfragen einer Prüfungsfrage – der Prüfer stellt sie nacheinander. */
   function examParts(q) {
     if (q.signLabel) return ['Was bedeutet dieses Verkehrszeichen? Erklären Sie Bedeutung, Ge- oder Verbote und das richtige Verhalten.'];
     // Aufzählungszeichen ("a)", "B:", "2.") weglassen – der Prüfer fragt wie im Gespräch.
-    return Core.splitQuestionParts(q.question).map(p => p.replace(/^(?:[a-h]\)|[A-D][):]|\d\.)\s+/gm, ''));
+    return Core.examPartTexts(q, plannedParts(q)).map(p => p.replace(/^(?:[A-D]\s+)?(?:[a-h]\)|[A-D][):]|\d\.)\s+/gm, ''));
   }
 
   function examQuestionText(q) {
@@ -2240,7 +2257,7 @@
     const section = examSection();
     const q = questionById.get(section.ids[section.index]);
     section.answers.push(answer);
-    const evaluation = Core.evaluateExamAnswers(q, section.answers);
+    const evaluation = Core.evaluateExamAnswers(q, section.answers, plannedParts(q));
     const timeUp = remainingMs(section) === 0;
     const parts = examParts(q);
     // Mehrteilige Frage: erst alle Teilfragen nacheinander, dann ggf. Nachfragen. Die
@@ -2250,9 +2267,8 @@
       examSay(section, `${PART_LEADS[(section.part - 1) % PART_LEADS.length]} ${parts[section.part]}`);
       return;
     }
-    const maxRounds = evaluation.score < 0.6 ? 2 : 1;
-
-    if (!timeUp && section.round < maxRounds) {
+    // Höchstens eine Nachfrage und nur nach einer schwachen Antwort – lieber mehr verschiedene Fragen.
+    if (!timeUp && section.round < 1) {
       const follow = Core.examinerFollowUp(q, evaluation, section.round);
       section.round += 1;
       if (follow) {
@@ -2289,7 +2305,7 @@
     }
     if (section.answers.length) {
       const q = questionById.get(section.ids[section.index]);
-      const evaluation = Core.evaluateExamAnswers(q, section.answers);
+      const evaluation = Core.evaluateExamAnswers(q, section.answers, plannedParts(q));
       finishExamQuestion(q.id, evaluation.score, evaluation.missing);
       section.answers = [];
     }
@@ -2308,7 +2324,7 @@
     render();
     try {
       const ids = section.ids.slice(0, MAX_AI_SECTION_QUESTIONS);
-      const reply = await aiExamine(ids, section.transcript, { panel: section.id, minutes: current.minutes, first: current.current === 0, timeUp, wrapUp, next: next ? next.id : '' });
+      const reply = await aiExamine(ids, section.transcript, { parts: section.parts, panel: section.id, minutes: current.minutes, first: current.current === 0, timeUp, wrapUp, next: next ? next.id : '' });
       if (exam !== current) return;
       if (timeUp) section.overtime = (section.overtime || 0) + 1;
       if (reply.assessment) {

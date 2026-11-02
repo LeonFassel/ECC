@@ -514,12 +514,70 @@ function runTests() {
     }
   }));
 
-  results.push(test('examinerFollowUp probes missing points on weak answers', () => {
+  results.push(test('examinerFollowUp asks once, only after a weak answer', () => {
     const item = q('verhalten-02');
     const weak = Core.evaluateAnswer(item, 'Man fährt zur Seite.');
     assert.ok(Core.examinerFollowUp(item, weak, 0).includes(weak.missing[0]));
+    assert.strictEqual(Core.examinerFollowUp(item, weak, 1), null, 'never a second follow-up');
     const strong = Core.evaluateAnswer(item, item.modelAnswer);
-    assert.strictEqual(Core.examinerFollowUp(item, strong, 0), item.followUps[0]);
+    assert.strictEqual(Core.examinerFollowUp(item, strong, 0), null, 'good answer: next question instead');
+  }));
+
+  const multi = {
+    id: 'm-1', subject: 'recht', topic: 'Straßenbenutzung',
+    question: 'Straßenbenutzung:\na) Was ist das Rechtsfahrgebot?\nb) Wann gilt die freie Fahrstreifenwahl?\nc) Wie funktioniert das Reißverschlussverfahren?\nd) Wie sind Züge mit unterschiedlicher Bremsanlage zusammenzustellen?',
+    modelAnswer: 'a) Rechtsfahrgebot: möglichst weit rechts fahren.\nb) Freie Fahrstreifenwahl innerorts bis 3,5 t.\nc) Reißverschluss unmittelbar vor der Engstelle.\nd) Auflaufbremse und Druckluft.',
+    keyPoints: [
+      { label: 'rechts fahren', keywords: ['rechts'] },
+      { label: '3,5 t innerorts', keywords: ['3,5 t', 'innerorts'] },
+      { label: 'vor der Engstelle', keywords: ['engstelle'] },
+      { label: 'Auflaufbremse', keywords: ['auflaufbremse'] }
+    ],
+    wrongClaims: [], followUps: ['Und auf der Autobahn?']
+  };
+
+  results.push(test('oral exam asks one or two consecutive parts, varied, and leaves out other subjects', () => {
+    assert.deepStrictEqual(Core.partLabels(Core.splitQuestionParts(multi.question)), ['a', 'b', 'c', 'd']);
+    const seen = new Set();
+    let seed = 1;
+    const rand = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
+    for (let i = 0; i < 60; i++) {
+      const parts = Core.pickExamParts(multi, rand, 'recht');
+      assert.ok(parts.length >= 1 && parts.length <= 2);
+      if (parts.length === 2) assert.strictEqual(parts[1], parts[0] + 1);
+      assert.ok(!parts.includes(3), 'brake part is technology, not law');
+      seen.add(parts.join(','));
+    }
+    assert.ok(seen.size >= 3, `varied selection: ${[...seen].join(' | ')}`);
+    assert.deepStrictEqual(Core.pickExamParts({ question: 'a) Eins?\nb) Zwei?' }, rand), [0, 1]);
+    assert.deepStrictEqual(Core.pickExamParts({ question: 'Nur eine Frage?' }, rand), [0]);
+  }));
+
+  results.push(test('asked parts: own text with context, own key points, own part of the model answer', () => {
+    const texts = Core.examPartTexts(multi, [1, 2]);
+    assert.deepStrictEqual(texts, ['Straßenbenutzung:\nb) Wann gilt die freie Fahrstreifenwahl?', 'c) Wie funktioniert das Reißverschlussverfahren?']);
+    assert.deepStrictEqual(Core.keyPointsForParts(multi, [1, 2]).map(p => p.label), ['3,5 t innerorts', 'vor der Engstelle']);
+    const asked = Core.examQuestion(multi, [1, 2]);
+    assert.ok(!asked.question.includes('Rechtsfahrgebot') && !asked.modelAnswer.includes('Auflaufbremse'));
+    assert.deepStrictEqual(asked.followUps, []);
+    assert.ok(asked.partNote.includes('nur die genannten Teilaufgaben'));
+    assert.strictEqual(Core.examQuestion(multi, [0, 1, 2, 3]), multi, 'all parts: unchanged');
+    assert.strictEqual(Core.examQuestion(multi, ['x', 99]), multi, 'invalid parts: whole question');
+    const full = Core.evaluateExamAnswers(multi, ['Innerorts bis 3,5 t frei wählen, Reißverschluss direkt an der Engstelle.'], [1, 2]);
+    assert.strictEqual(full.score, 1, 'complete answer to the asked parts is full marks');
+    assert.deepStrictEqual(full.missing, []);
+    const whole = Core.evaluateExamAnswers(multi, ['Innerorts bis 3,5 t frei wählen, Reißverschluss direkt an der Engstelle.']);
+    assert.ok(whole.score < 0.7, 'without the plan the whole question counts');
+  }));
+
+  results.push(test('parts that cannot be matched to the model answer are scored by share, without follow-ups', () => {
+    const loose = Object.assign({}, multi, { modelAnswer: 'Rechts fahren; innerorts 3,5 t; Engstelle; Auflaufbremse.' });
+    assert.strictEqual(Core.keyPointsForParts(loose, [1, 2]), null);
+    const ev = Core.evaluateExamAnswers(loose, ['Innerorts bis 3,5 t frei wählen, Reißverschluss an der Engstelle.'], [1, 2]);
+    assert.ok(ev.score >= 0.9, `share-based score ${ev.score}`);
+    assert.deepStrictEqual(ev.missing, []);
+    assert.strictEqual(Core.examinerFollowUp(loose, ev, 0), null);
+    assert.ok(!/: \./.test(ev.feedback));
   }));
 
   results.push(test('examVerdict grades the simulation', () => {

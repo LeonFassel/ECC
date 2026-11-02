@@ -9,6 +9,7 @@ const assert = require('assert');
 const { createAppServer } = require('../../../apps/fahrlehrer-pruefung/server');
 const ai = require('../../../apps/fahrlehrer-pruefung/lib/ai-examiner');
 const data = require('../../../apps/fahrlehrer-pruefung/public/data/questions');
+const Core = require('../../../apps/fahrlehrer-pruefung/public/core/learning-core');
 
 async function test(name, fn) {
   try {
@@ -168,7 +169,8 @@ async function runTests() {
 
   const service = {
     evaluate: async (q, answer) => ({ score: 0.5, covered: [], missing: [], errors: [], feedback: `${q.id}:${answer}`, tip: '' }),
-    examine: async (qs, history, options) => ({ message: `${qs.length}/${history.length}${options ? `/${options.examiner}/${options.minutes}/${options.timeUp}/${options.wrapUp}/${options.next === null ? 'ende' : options.next ? options.next.examiner : '-'}` : ''}`, assessment: null, finished: false, summary: '' }),
+    examine: async (qs, history, options) => (service.lastQuestions = qs, { message: `${qs.length}/${history.length}${options ? `/${options.examiner}/${options.minutes}/${options.timeUp}/${options.wrapUp}/${options.next === null ? 'ende' : options.next ? options.next.examiner : '-'}` : ''}`, assessment: null, finished: false, summary: '' }),
+    lastQuestions: null,
     gradeWritten: async () => ({ parts: [] }),
     answerSearch: async (query, sources) => ({ found: true, answer: `${query}:${sources.map(q => q.id).join(',')}`, laws: [], sources: [] })
   };
@@ -223,6 +225,19 @@ async function runTests() {
     const ok = await post(fullUrl, '/api/evaluate', { questionId: question.id, answer: ' Antwort ' });
     assert.strictEqual(ok.status, 200);
     assert.strictEqual((await ok.json()).feedback, `${question.id}:Antwort`);
+  }));
+
+  results.push(await test('examiner endpoint passes only the asked parts of a question', async () => {
+    const multi = data.questions.find(q => Core.splitQuestionParts(q.question).length >= 3);
+    assert.ok(multi, 'a multi-part question exists');
+    await post(fullUrl, '/api/examiner', { questionIds: [multi.id], parts: { [multi.id]: [1] }, history: [], panel: 'recht' });
+    const asked = service.lastQuestions[0];
+    assert.ok(asked.partNote && asked.question.length < multi.question.length);
+    assert.deepStrictEqual(asked.followUps, []);
+    await post(fullUrl, '/api/examiner', { questionIds: [multi.id], parts: { [multi.id]: 'alle' }, history: [], panel: 'recht' });
+    assert.strictEqual(service.lastQuestions[0].question, multi.question, 'invalid parts: whole question');
+    await post(fullUrl, '/api/examiner', { questionIds: [multi.id], parts: ['x'], history: [], panel: 'recht' });
+    assert.strictEqual(service.lastQuestions[0].question, multi.question);
   }));
 
   results.push(await test('examiner endpoint filters history and unknown questions', async () => {

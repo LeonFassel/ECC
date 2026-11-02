@@ -137,7 +137,7 @@
    * Ein Kernpunkt gilt als genannt, wenn eines seiner Schlüsselwörter vorkommt.
    * Typische Fehler (wrongClaims) werden erkannt, sofern sie nicht verneint sind.
    */
-  function evaluateAnswer(question, answerText) {
+  function evaluateAnswer(question, answerText, options) {
     const answer = normalize(answerText);
     const words = answer ? answer.split(' ').length : 0;
     const covered = [];
@@ -159,7 +159,10 @@
     // Wie ein menschlicher Prüfer: Wer fast alles nennt, ist voll richtig. Die volle Punktzahl
     // gibt es ab HUMAN_FULL der Kernpunkte; der Rest wird anteilig hochgerechnet
     // (4 von 5 Punkten = 0.94, 3 von 4 = 0.88, 2 von 3 = 0.78, 1 von 2 = 0.59).
-    let score = Math.min(1, covered.length / total / HUMAN_FULL);
+    // share < 1: nur ein Teil der Frage wurde gestellt, die Kernpunkte ließen sich aber nicht
+    // den Teilen zuordnen – dann reicht entsprechend weniger für die volle Punktzahl.
+    const share = options && options.share > 0 && options.share < 1 ? options.share : 1;
+    let score = Math.min(1, covered.length / total / (HUMAN_FULL * share));
     // Sehr kurze Antworten können Schlüsselwörter zufällig enthalten – leicht abwerten.
     if (words > 0 && words < 8) score *= 0.8;
     score -= Math.min(0.45, wrong.length * 0.15);
@@ -199,8 +202,8 @@
   function buildFeedback(score, missing, wrong) {
     const wrongNote = wrong && wrong.length ? ' Achtung: Ein Teil Ihrer Aussage ist fachlich falsch – siehe unten.' : '';
     if (score >= 0.85) return `Sehr gut – Sie haben die wesentlichen Punkte genannt.${wrongNote}`;
-    if (score >= 0.6) return `Gute Antwort. Ergänzen Sie noch: ${missing.slice(0, 2).join(', ')}.${wrongNote}`;
-    if (score >= 0.3) return `Teilweise richtig. Es fehlen wichtige Punkte, z. B. ${missing.slice(0, 3).join(', ')}.${wrongNote}`;
+    if (score >= 0.6) return missing.length ? `Gute Antwort. Ergänzen Sie noch: ${missing.slice(0, 2).join(', ')}.${wrongNote}` : `Gute Antwort – einzelne Punkte fehlen noch.${wrongNote}`;
+    if (score >= 0.3) return missing.length ? `Teilweise richtig. Es fehlen wichtige Punkte, z. B. ${missing.slice(0, 3).join(', ')}.${wrongNote}` : `Teilweise richtig – wichtige Punkte fehlen noch.${wrongNote}`;
     return `Hier fehlt noch viel. Lesen Sie die Erklärung und die Musterantwort in Ruhe durch.${wrongNote}`;
   }
 
@@ -850,22 +853,189 @@
     return parts;
   }
 
-  /** Nachfrage des lokalen Prüfers – greift fehlende Punkte auf. */
+  /**
+   * Nachfrage des lokalen Prüfers – wie in echt sparsam: nur nach einer schwachen Antwort,
+   * einmal, und nur zu einem fehlenden Punkt der gestellten Teilaufgaben. Lieber mehr
+   * verschiedene Fragen als eine Frage erschöpfend.
+   */
   function examinerFollowUp(question, evaluation, round) {
-    if (evaluation.score >= 0.85 && round === 0) {
-      return question.followUps[0] || null;
-    }
-    if (evaluation.missing.length > round && evaluation.score < 0.5) {
-      // Jede Nachfrage greift einen anderen fehlenden Punkt auf – nie zweimal dieselbe.
-      const point = evaluation.missing[round];
-      return `${round === 0 ? 'Das reicht mir noch nicht ganz.' : 'Noch ein Punkt:'} Gehen Sie bitte genauer auf folgenden Aspekt ein: ${point}.`;
-    }
-    return question.followUps[round % question.followUps.length] || null;
+    if (round > 0 || evaluation.score >= 0.6 || !evaluation.missing.length) return null;
+    return `Das reicht mir noch nicht ganz. Gehen Sie bitte genauer auf folgenden Aspekt ein: ${evaluation.missing[0]}.`;
   }
 
-  /** Kombiniert die Antworten auf Hauptfrage und Nachfragen zu einer Bewertung. */
-  function evaluateExamAnswers(question, answers) {
-    return evaluateAnswer(question, answers.join(' \n '));
+  // ------------------------------------------------------------------ Teilaufgaben in der mündlichen Prüfung
+
+  const BLOCK_LINE = /^\s*([A-D])[):]\s/;
+  const PART_LINE = /^\s*(?:([A-D])\s+)?([a-h])\)\s/;
+  const NUMBER_LINE = /^\s*(\d)\.\s/;
+
+  /** Kennung je Teilaufgabe: „a“, „Ab“ (Block A, Teil b), „B“ oder „2“; null, wenn keine erkennbar. */
+  function partLabels(parts) {
+    let block = '';
+    return parts.map(text => {
+      let letter = '';
+      let number = '';
+      for (const line of text.split('\n').flatMap(splitInlineLetters)) {
+        const p = PART_LINE.exec(line);
+        const b = !p && BLOCK_LINE.exec(line);
+        const n = !p && !b && NUMBER_LINE.exec(line);
+        if (p) {
+          if (p[1]) block = p[1];
+          letter = p[2];
+        } else if (b) {
+          block = b[1];
+          letter = '';
+        } else if (n && !letter && !number) {
+          number = n[1];
+        }
+      }
+      return letter ? block + letter : (block || number || null);
+    });
+  }
+
+  /** Abschnitte der Musterantwort nach denselben Kennungen („a)“, „A b)“, „B:“). */
+  function answerSections(modelAnswer) {
+    const sections = {};
+    let block = '';
+    let key = null;
+    for (const line of String(modelAnswer || '').split('\n').flatMap(splitInlineLetters)) {
+      const p = PART_LINE.exec(line);
+      const b = !p && BLOCK_LINE.exec(line);
+      if (p) {
+        if (p[1]) block = p[1];
+        key = block + p[2];
+      } else if (b) {
+        block = b[1];
+        key = block;
+      }
+      if (key) sections[key] = sections[key] ? `${sections[key]}\n${line}` : line;
+    }
+    return sections;
+  }
+
+  /** Teilaufgaben einer Frage samt zugehörigem Abschnitt der Musterantwort (sections null: nicht zuordenbar). */
+  function examPartMap(q) {
+    const parts = splitQuestionParts(q.question);
+    const labels = partLabels(parts);
+    const found = answerSections(q.modelAnswer);
+    const mapped = parts.length > 1 && new Set(labels).size === labels.length && labels.every(l => l && found[l]);
+    return { parts, labels, sections: mapped ? labels.map(l => found[l]) : null };
+  }
+
+  // Teilaufgaben aus einem anderen Prüfungsgebiet (z. B. Bremsanlagen in einer Rechtsfrage) möglichst nicht stellen.
+  const OFF_TOPIC = {
+    recht: /Bremsanlage|Bremskraft|Motor|Getriebe|Kupplung|Lenkung|Fahrwerk|Stoßdämpfer|Batterie|Zündung|Einspritz|Abgasanlage|Katalysator|Turbo|Hydraulik|Druckluft/i,
+    paedagogik: /Bremsanlage|Bremskraft|Motor|Getriebe|Kupplung|Lenkung|Fahrwerk|Stoßdämpfer|Batterie|Zündung|Einspritz|Abgasanlage|Katalysator|Turbo|Hydraulik|Druckluft/i
+  };
+
+  /**
+   * Welche Teilaufgaben der Prüfer stellt: bei mehr als zwei Teilen nur ein oder zwei
+   * aufeinanderfolgende, jedes Mal andere (mal a und b, mal c und d). Teile aus einem
+   * fremden Fach werden ausgelassen, solange es andere gibt.
+   */
+  function pickExamParts(q, rand, panel) {
+    const count = splitQuestionParts(q.question).length;
+    if (count <= 2) return Array.from({ length: count }, (_, i) => i);
+    const parts = splitQuestionParts(q.question);
+    const take = rand() < 0.3 ? 1 : 2;
+    const offTopic = OFF_TOPIC[panel || examPanelFor(q)];
+    const windows = [];
+    for (let start = 0; start + take <= count; start++) windows.push(Array.from({ length: take }, (_, i) => start + i));
+    const fitting = windows.filter(w => (!offTopic || w.every(i => !offTopic.test(parts[i]))) && !dependsOnPrevious(parts[w[0]], w[0]));
+    const pool = fitting.length ? fitting : windows;
+    return pool[Math.floor(rand() * pool.length)];
+  }
+
+  const DEPENDENT = /\b(?:diese[nmrs]?|dies|dabei|dazu|hierzu|hierbei|davon|deren|dessen|ebenfalls|außerdem|weitere[nmrs]?)\b|^(?:nennen|geben)\s+sie\s+(?:\d+|ein|zwei|drei)\s+beispiel|^(?:begründen|erläutern)\s+sie\s+(?:das|ihre)\b/i;
+
+  /** Baut eine Teilaufgabe auf die vorige auf („Wie erreichen Sie diese Ziele?“, „Nennen Sie 2 Beispiele!“)? */
+  function dependsOnPrevious(text, index) {
+    if (index === 0) return false;
+    const own = String(text).split('\n').filter(line => PART_LINE.test(line) || NUMBER_LINE.test(line)).join(' ')
+      .replace(/^\s*(?:[A-D]\s+)?(?:[a-h]\)|\d\.)\s*/, '').trim();
+    return own.length < 30 || DEPENDENT.test(own);
+  }
+
+  /** Gültige Auswahl von Teilaufgaben oder null (= ganze Frage). */
+  function validParts(q, indices) {
+    const count = splitQuestionParts(q.question).length;
+    if (!Array.isArray(indices) || !indices.length || indices.length >= count) return null;
+    const list = Array.from(new Set(indices)).filter(i => Number.isInteger(i) && i >= 0 && i < count).sort((a, b) => a - b);
+    return list.length && list.length < count ? list.slice(0, 2) : null;
+  }
+
+  /** Einleitung bzw. Blocküberschrift, die zur Teilaufgabe gehört, aber nur beim ersten Teil steht. */
+  function partContext(parts, labels, index) {
+    const block = labels[index] && /^[A-D]/.test(labels[index]) ? labels[index][0] : '';
+    let first = 0;
+    if (block) first = labels.findIndex(l => l && l[0] === block);
+    if (first < 0 || first === index) return '';
+    const lines = parts[first].split('\n');
+    const end = lines.findIndex(line => PART_LINE.test(line) || NUMBER_LINE.test(line));
+    const context = (end < 0 ? [] : lines.slice(0, end)).join('\n').trim();
+    // Nur echte Einleitungen („Straßenbenutzung:“ oder ein Fallbeispiel) – eine kurze
+    // Überschrift ohne Doppelpunkt gehört meist nur zur ersten Teilaufgabe („Haltverbote“).
+    return /:$/.test(context) || context.length > 80 ? context : '';
+  }
+
+  /** Texte der gestellten Teilaufgaben; der erste bekommt den nötigen Zusammenhang (Einleitung). */
+  function examPartTexts(q, indices) {
+    const parts = splitQuestionParts(q.question);
+    const chosen = validParts(q, indices);
+    if (!chosen) return parts;
+    const labels = partLabels(parts);
+    const context = partContext(parts, labels, chosen[0]);
+    return chosen.map((i, n) => (n === 0 && context ? `${context}\n${parts[i]}` : parts[i]));
+  }
+
+  /** Kernpunkte der gestellten Teilaufgaben – null, wenn die Teile nicht zuordenbar sind. */
+  function keyPointsForParts(q, indices) {
+    const chosen = validParts(q, indices);
+    if (!chosen) return null;
+    const map = examPartMap(q);
+    if (!map.sections) return null;
+    const texts = map.sections.map(normalize);
+    const set = new Set(chosen);
+    const picked = q.keyPoints.filter(point => {
+      const hits = texts.map(t => point.keywords.filter(k => findKeyword(t, k) >= 0).length);
+      const best = Math.max(...hits);
+      return best > 0 && hits.some((h, i) => h === best && set.has(i));
+    });
+    return picked.length ? picked : null;
+  }
+
+  /**
+   * Die Frage so, wie sie in der Prüfung gestellt wird: nur die gewählten Teilaufgaben,
+   * dazu passende Kernpunkte und – wenn zuordenbar – nur der passende Teil der Musterantwort.
+   */
+  function examQuestion(q, indices) {
+    const chosen = validParts(q, indices);
+    if (!chosen) return q;
+    const map = examPartMap(q);
+    const points = keyPointsForParts(q, chosen);
+    return Object.assign({}, q, {
+      question: examPartTexts(q, chosen).join('\n'),
+      modelAnswer: map.sections ? chosen.map(i => map.sections[i]).join('\n\n') : q.modelAnswer,
+      keyPoints: points || q.keyPoints,
+      followUps: [],
+      partNote: map.sections
+        ? 'In der Prüfung werden von dieser Frage nur die genannten Teilaufgaben gestellt. Bewerte nur diese.'
+        : `In der Prüfung werden von dieser Frage nur die genannten Teilaufgaben gestellt (${chosen.length} von ${map.parts.length}). Die Musterantwort deckt die ganze Frage ab – bewerte nur, was zu den gestellten Teilen gehört.`
+    });
+  }
+
+  /** Bewertung der Antworten auf die gestellten Teilaufgaben (Hauptfrage und Nachfrage zusammen). */
+  function evaluateExamAnswers(question, answers, indices) {
+    const text = answers.join(' \n ');
+    const chosen = validParts(question, indices);
+    if (!chosen) return evaluateAnswer(question, text);
+    const points = keyPointsForParts(question, chosen);
+    if (points) return evaluateAnswer(Object.assign({}, question, { keyPoints: points }), text);
+    // Nicht zuordenbar: am Anteil der gestellten Teile messen; fehlende Punkte könnten aus
+    // nicht gestellten Teilen stammen und werden daher nicht als Nachfrage verwendet.
+    const share = chosen.length / splitQuestionParts(question.question).length;
+    const result = evaluateAnswer(question, text, { share });
+    return Object.assign(result, { missing: [], feedback: buildFeedback(result.score, [], result.wrong) });
   }
 
   function examVerdict(scores) {
@@ -911,6 +1081,12 @@
     splitQuestionParts,
     examinerFollowUp,
     evaluateExamAnswers,
+    partLabels,
+    answerSections,
+    pickExamParts,
+    examPartTexts,
+    keyPointsForParts,
+    examQuestion,
     examVerdict
   };
 });

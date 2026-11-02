@@ -17,14 +17,14 @@ const path = require('path');
 const data = require('./public/data/questions.js');
 const written = require('./public/data/questions-schriftlich.js');
 const { createAiService, loadDefaultClient, AiResponseError, MODEL } = require('./lib/ai-examiner');
-const { EXAM_PANEL } = require('./public/core/learning-core.js');
+const { EXAM_PANEL, examQuestion } = require('./public/core/learning-core.js');
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const MAX_BODY_BYTES = 64 * 1024;
 // Korrektur der schriftlichen Prüfung: Fotos der Antwortblätter (JPEG, base64).
 const MAX_WRITTEN_BODY_BYTES = 40 * 1024 * 1024;
 const MAX_WRITTEN_PAGES = 40;
-const MAX_EXAM_QUESTIONS = 8;
+const MAX_EXAM_QUESTIONS = 12;
 const MAX_SEARCH_SOURCES = 6;
 
 const MIME_TYPES = {
@@ -182,7 +182,10 @@ function createAppServer(options) {
 
     if (pathname === '/api/examiner') {
       const ids = Array.isArray(body.questionIds) ? body.questionIds.slice(0, MAX_EXAM_QUESTIONS) : [];
-      const questions = ids.map(id => questionById.get(id)).filter(Boolean);
+      // Gestellte Teilaufgaben je Frage; ungültige Angaben ergeben die ganze Frage.
+      const parts = body.parts && typeof body.parts === 'object' && !Array.isArray(body.parts) ? body.parts : {};
+      const questions = ids.map(id => questionById.get(id)).filter(Boolean)
+        .map(q => examQuestion(q, Object.prototype.hasOwnProperty.call(parts, q.id) ? parts[q.id] : null));
       const history = Array.isArray(body.history)
         ? body.history.filter(t => t && typeof t.text === 'string' && (t.role === 'examiner' || t.role === 'candidate'))
         : [];
