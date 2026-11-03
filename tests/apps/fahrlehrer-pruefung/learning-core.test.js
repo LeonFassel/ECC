@@ -413,6 +413,14 @@ function runTests() {
     assert.strictEqual(Core.examPanelFor({ subject: 'praxis', topic: 'Sonderfahrten' }), 'paedagogik');
     assert.strictEqual(Core.examPanelFor({ subject: 'technik' }), 'technik');
     assert.strictEqual(Core.examPanelFor({ subject: 'karteikarten', collection: 'karteikarten' }), null);
+    const card = { subject: 'karteikarten', collection: 'karteikarten', deck: 'technik', topic: 'Motor', question: 'Warum ist ein Getriebe erforderlich?' };
+    assert.strictEqual(Core.examPanelFor(card), 'technik', 'flash cards with a real question are asked by their deck examiner');
+    assert.strictEqual(Core.examPanelFor(Object.assign({}, card, { deck: 'verhalten' })), 'recht');
+    assert.strictEqual(Core.examPanelFor(Object.assign({}, card, { question: '§ 8 Vorfahrt' })), null, 'keyword cards are no exam questions');
+    assert.strictEqual(Core.examPanelFor(Object.assign({}, card, { deck: 'verhalten', question: 'Was ist Fliehkraft?' })), 'technik', 'physics card from the behaviour deck');
+    assert.strictEqual(Core.examPanelFor(Object.assign({}, card, { deck: 'verhalten', question: 'Für welche Fahrzeuge gilt keine Winterreifenpflicht?' })), 'recht');
+    assert.strictEqual(Core.examPanelFor(Object.assign({}, card, { deck: 'verhalten', topic: 'Praktische Ausbildung', question: 'Die 5 Lehrstufen?' })), 'paedagogik');
+    assert.strictEqual(Core.examPanelFor(Object.assign({}, card, { cardLabel: 'Mündliche Sammlung Nr. 3' })), null, 'already in the oral collection');
     const panel = Core.buildExamPanel(data, Core.createState(), NOW, 6);
     assert.deepStrictEqual(panel.map(s => s.id), ['recht', 'paedagogik', 'technik']);
     for (const section of panel) {
@@ -434,6 +442,43 @@ function runTests() {
       const pool = data.questions.filter(x => Core.examPanelFor(x) === section.id && Core.inOralExam(x)).length;
       if (pool >= 8) assert.ok(section.ids.every(id => !first[i].includes(id)), `${section.id}: no repeat while others are left`);
     });
+  }));
+
+  const topicQ = (id, topic, question, extra) => Object.assign({ id, subject: 'verhalten', topic, question, keyPoints: [{ label: 'x', keywords: ['x'] }] }, extra);
+
+  results.push(test('similar questions: same topic from different collections, not just shared words', () => {
+    const a = topicQ('a', 'Bremsbereitschaft', 'Was versteht man unter Bremsbereitschaft?');
+    const b = topicQ('b', 'Bremsbereitschaft erklären und schulen', 'Erklären Sie einem Fahrschüler, wann Bremsbereitschaft nötig ist.');
+    const c = topicQ('c', 'Sicherheitsabstand', 'Welcher Sicherheitsabstand ist einzuhalten?');
+    const d = topicQ('d', 'Abstand halten: Mindestabstand', 'Wie prüfen Sie den Abstand?');
+    const e = topicQ('e', 'Fortbildungspflicht', 'Welche Fortbildungspflichten haben Fahrlehrer?');
+    const f = topicQ('f', 'Fahrtrichtungsanzeiger: Pflichten und Fehler', 'Wann ist zu blinken?');
+    assert.ok(Core.similarQuestions(a, b));
+    assert.ok(Core.similarQuestions(c, d), 'compound word ends with the core term');
+    assert.ok(!Core.similarQuestions(a, c));
+    assert.ok(!Core.similarQuestions(e, f), 'a generic word like Pflicht is no shared topic');
+    assert.ok(!Core.similarQuestions(topicQ('s1', 'Zeichen 205', 'Was bedeutet das?', { signLabel: 'Zeichen 205' }), topicQ('s2', 'Zeichen 206', 'Was bedeutet das?', { signLabel: 'Zeichen 206' })));
+    const cardA = topicQ('k1', 'Motor', 'Warum ist ein Getriebe erforderlich?', { collection: 'karteikarten' });
+    const cardB = topicQ('k2', 'Motor', 'Wie funktioniert die Einspritzung?', { collection: 'karteikarten' });
+    assert.ok(!Core.similarQuestions(cardA, cardB), 'flash card group names are no topics');
+  }));
+
+  results.push(test('exam panel: one question per topic, and topics from recent exams come later', () => {
+    const qs = [];
+    ['Bremsbereitschaft', 'Sicherheitsabstand', 'Vorfahrt', 'Überholen', 'Ladung', 'Abschleppen'].forEach((topic, t) => {
+      for (let i = 0; i < 3; i++) qs.push(topicQ(`t${t}-${i}`, `${topic} ${['Grundlagen', 'in der Praxis', 'und Fehler'][i]}`, `${['Was regelt', 'Wie vermitteln Sie', 'Welche Fehler gibt es bei'][i]} ${topic}?`));
+    });
+    const mini = { questions: qs };
+    const topicOf = id => id.split('-')[0];
+    for (let n = 0; n < 20; n++) {
+      const ids = Core.buildExamPanel(mini, Core.createState(), NOW + n * 3600000, 6)[0].ids;
+      assert.strictEqual(new Set(ids.map(topicOf)).size, 6, `one question per topic: ${ids.join(',')}`);
+    }
+    let st = Core.createState();
+    const first = Core.buildExamPanel(mini, st, NOW, 3)[0].ids;
+    first.forEach(id => { st = Core.recordAttempt(st, id, { score: 0.2, source: 'exam' }, NOW); });
+    const second = Core.buildExamPanel(mini, st, NOW + 86400000, 3)[0].ids;
+    assert.ok(second.every(id => !first.map(topicOf).includes(topicOf(id))), `new topics first: ${first} -> ${second}`);
   }));
 
   results.push(test('oral exam grades per examiner and overall', () => {

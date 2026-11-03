@@ -617,14 +617,93 @@
 
   const TEACHING_TOPIC = /Fahrlehrer(?!register)|Fahrschul|FahrlG|FahrschAusbO|FahrlAusbV|Ausbildungsnachweis|Ausbildungsplan|Tagesnachweis|Diagrammkarte/i;
 
-  /** Welcher Prüfer eine Frage stellt (null = nicht in der mündlichen Prüfung, z. B. Karteikarten). */
-  function examPanelFor(q) {
-    if (!q || q.collection === 'karteikarten' || q.subject === 'karteikarten') return null;
-    if (q.subject === 'technik') return 'technik';
-    if (q.subject === 'paedagogik' || q.subject === 'praxis') return 'paedagogik';
-    if (q.subject === 'recht' || q.subject === 'verhalten') return TEACHING_TOPIC.test(q.topic || '') ? 'paedagogik' : 'recht';
-    if (q.subject === 'zeichen') return 'recht';
+  // Karteikarten mit einer echten Frage („Was ist …?“, „Nennen Sie …!“) – Stichwortkarten wie
+  // „§ 8 Vorfahrt“ eignen sich nicht als Prüfungsfrage.
+  const CARD_TECH = /Fliehkraft|Reifen(?!pflicht)|Fahrzeugwartung|am Motor/i;
+  const CARD_TEACHING = /^(?:Praktische|Theoretische) Ausbildung$/;
+  const CARD_ASKS = /\?|!\s*$|\b(?:nennen|erklären|erläutern|beschreiben|benennen|definieren|schildern|zählen)\b/i;
+
+  /**
+   * Welcher Prüfer eine Frage stellt (null = nicht in der mündlichen Prüfung). Karteikarten
+   * zählen nach ihrem Stapel; Karten aus der mündlichen Sammlung (cardLabel) sind dort
+   * schon als eigene Fragen enthalten.
+   */
+  function cardPanel(q) {
+    if (q.cardLabel || !CARD_ASKS.test(q.question || '')) return null;
+    // Der Stapel Verkehrsverhalten enthält auch Technik- und Ausbildungskarten.
+    if (q.deck === 'verhalten' && CARD_TECH.test(q.question || '')) return 'technik';
+    if (q.deck === 'verhalten' && CARD_TEACHING.test(q.topic || '')) return 'paedagogik';
+    return subjectPanel(q.deck, q.topic);
+  }
+
+  function subjectPanel(subject, topic) {
+    if (subject === 'technik') return 'technik';
+    if (subject === 'paedagogik' || subject === 'praxis') return 'paedagogik';
+    if (subject === 'recht' || subject === 'verhalten') return TEACHING_TOPIC.test(topic || '') ? 'paedagogik' : 'recht';
+    if (subject === 'zeichen') return 'recht';
     return null;
+  }
+
+  function examPanelFor(q) {
+    if (!q) return null;
+    if (q.collection === 'karteikarten' || q.subject === 'karteikarten') return cardPanel(q);
+    return subjectPanel(q.subject, q.topic);
+  }
+
+  // ------------------------------------------------------------------ Ähnliche Fragen
+
+  // Füllwörter und typische Frageformeln zählen beim Vergleich nicht.
+  const SIM_STOP = new Set(('der die das und oder ein eine einer eines einem einen zu im in an auf mit von bei fuer sie was wie welche welcher welches '
+    + 'welchen sind ist den dem des nach aus vor als auch nicht es man wird werden kann koennen muss muessen erklaeren erlaeutern nennen '
+    + 'beschreiben benennen geben hinweise sowie dabei diese dieser dieses ihre ihren ihrem fahrschueler fahrschuelern fahrlehrer beispiel '
+    + 'beispiele wann warum wozu durch ueber unter zwischen beim zum zur jeweils bitte dann wenn welchem diesem diesen haben gibt frage fragen '
+    + 'thema themen grundlagen').split(' '));
+  const simCache = new WeakMap();
+  // Allgemeine Begriffe taugen nicht als Kernbegriff eines Themas.
+  const SIM_GENERIC = new Set(['fahrerlaubnis', 'ausbildung', 'unterricht', 'theorieunterricht', 'strassenverkehr', 'fahrzeug', 'fahrzeuge',
+    'fahrzeugen', 'pruefung', 'verhalten', 'praktische', 'praktischen', 'besondere', 'allgemeine', 'rechtliche', 'technische', 'grundlagen',
+    'begriffe', 'vorschriften', 'pflicht', 'pflichten', 'fahrschule', 'fahrschueler', 'fahrlehrer', 'beispiel', 'beispielen', 'situationen',
+    'methoden', 'zeichen', 'verkehrszeichen', 'verbotszeichen', 'gefahrzeichen', 'richtzeichen', 'vorschriftzeichen', 'regelungen', 'unterschied', 'unterschiede', 'aufgaben', 'bedeutung', 'anforderungen',
+    'klasse', 'klassen', 'regeln', 'fehler', 'praxis', 'gefahr', 'gefahren', 'rechte', 'arten', 'einsatz', 'umgang', 'ablauf', 'planung',
+    'fahrlehrers', 'fahrschuelers', 'verbot', 'verbote', 'fahren', 'strasse', 'strassen']);
+
+  function simWords(text) {
+    return normalize(text).replace(/[^a-z0-9 ]/g, ' ').split(' ').filter(w => w.length > 3 && !SIM_STOP.has(w)).map(w => w.slice(0, 7));
+  }
+
+  // Karteikarten haben nur Sammelthemen („Motor“, „StVO“) – dort zählt allein der Fragetext.
+  function simTokens(q) {
+    let t = simCache.get(q);
+    if (!t) {
+      const card = q.collection === 'karteikarten';
+      const head = card ? '' : normalize(q.topic || '').split(/[^a-z0-9]+/).find(w => w.length >= 6 && !SIM_GENERIC.has(w)) || '';
+      t = { all: new Set(simWords(`${card ? '' : q.topic || ''} ${q.question || ''}`)), topic: new Set(card ? [] : simWords(q.topic || '')), head, words: card ? [] : normalize(q.topic || '').split(/[^a-z0-9]+/).filter(w => w.length >= 6) };
+      simCache.set(q, t);
+    }
+    return t;
+  }
+
+  function overlap(a, b) {
+    let shared = 0;
+    for (const w of a) if (b.has(w)) shared += 1;
+    return { shared, ratio: shared / ((a.size + b.size - shared) || 1) };
+  }
+
+  /** Fragen zum selben Thema, z. B. „Bremsbereitschaft“ aus zwei Sammlungen. Verkehrszeichen zählen nie als ähnlich. */
+  function similarQuestions(a, b) {
+    if (!a || !b) return false;
+    if (a === b || a.id === b.id) return true;
+    if (a.signLabel || b.signLabel) return false;
+    const ta = simTokens(a);
+    const tb = simTokens(b);
+    const all = overlap(ta.all, tb.all);
+    if (all.ratio >= 0.4 && all.shared >= 3) return true;
+    const topic = overlap(ta.topic, tb.topic);
+    if (topic.shared >= 2 && topic.ratio >= 0.6) return true;
+    // Gleicher Kernbegriff im Thema („Bremsbereitschaft“ – „Bremsbereitschaft erklären und schulen“,
+    // „Abstand halten“ – „Sicherheitsabstand“: zusammengesetzte Wörter enden auf den Kernbegriff).
+    const sameHead = (x, y) => Boolean(x.head) && y.words.some(w => w.endsWith(x.head));
+    return sameHead(ta, tb) || sameHead(tb, ta);
   }
 
   // Verkehrszeichen in der mündlichen Prüfung: nur Zeichen bis 357 (Sackgasse) –
@@ -648,31 +727,49 @@
     const ts = typeof now === 'number' ? now : Date.now();
     const rand = seededRandom(`panel-${ts}`);
     const size = perSection || 12;
-    // Vor allem Zufall, schwächere Themen leicht bevorzugt. Fragen aus den Prüfungen der
-    // letzten drei Wochen kommen erst dran, wenn alle anderen durch sind (die zuletzt
-    // gefragten ganz hinten) – sonst kehren schwach beantwortete Fragen immer wieder.
+    // Fragen aus den Prüfungen der letzten drei Wochen kommen erst dran, wenn alle anderen durch
+    // sind (die zuletzt gefragten ganz hinten), ähnliche Fragen dazu ebenfalls erst später.
     const repeatWindow = EXAM_REPEAT_DAYS * DAY_MS;
+    const byId = new Map(data.questions.map(q => [q.id, q]));
+    // In den letzten drei Wochen in einer Prüfung gefragt: die Frage selbst und ähnliche Fragen.
+    const recent = [];
+    for (const [id, attempts] of Object.entries(state.attempts || {})) {
+      const last = (attempts || []).reduce((t, a) => (a && a.source === 'exam' && a.ts > t ? a.ts : t), 0);
+      if (last && ts - last < repeatWindow && byId.has(id)) recent.push({ q: byId.get(id), fresh: (repeatWindow - (ts - last)) / repeatWindow });
+    }
+    const recency = q => {
+      let penalty = 0;
+      for (const r of recent) {
+        if (r.q.id === q.id) penalty = Math.max(penalty, 2 + r.fresh);
+        else if (similarQuestions(r.q, q)) penalty = Math.max(penalty, 1 + r.fresh);
+      }
+      return penalty;
+    };
+    // Vor allem Zufall, schwächere Themen nur leicht bevorzugt.
     const rank = list => list.map(q => {
-      const attempts = state.attempts[q.id] || [];
-      const m = questionMastery(attempts, ts);
-      const lastExam = attempts.reduce((t, a) => (a && a.source === 'exam' && a.ts > t ? a.ts : t), 0);
-      const recent = lastExam && ts - lastExam < repeatWindow ? 2 + (repeatWindow - (ts - lastExam)) / repeatWindow : 0;
-      return { q, key: rand() + (m === null ? 0.5 : m) * 0.5 + recent };
+      const m = questionMastery(state.attempts[q.id] || [], ts);
+      return { q, key: rand() + (m === null ? 0.5 : m) * 0.25 + recency(q) };
     }).sort((a, b) => a.key - b.key).map(x => x.q);
+    // Nächste Frage aus der Liste, die keiner schon gewählten Frage ähnelt (sonst die nächstbeste).
+    const takeVaried = (list, chosen) => {
+      const i = list.findIndex(q => !chosen.some(c => similarQuestions(c, q)));
+      return list.splice(i < 0 ? 0 : i, 1)[0];
+    };
     return EXAM_PANEL.map(section => {
       const pool = data.questions.filter(q => examPanelFor(q) === section.id && inOralExam(q));
-      let ids;
+      const chosen = [];
       if (section.id === 'recht') {
         const signs = rank(pool.filter(q => q.subject === 'zeichen'));
         const law = rank(pool.filter(q => q.subject !== 'zeichen'));
-        ids = [];
-        while (ids.length < size && (signs.length || law.length)) {
-          const takeSign = signs.length && (!law.length || ids.length % 3 === 1);
-          ids.push((takeSign ? signs : law).shift().id);
+        while (chosen.length < size && (signs.length || law.length)) {
+          const takeSign = signs.length && (!law.length || chosen.length % 3 === 1);
+          chosen.push(takeVaried(takeSign ? signs : law, chosen));
         }
       } else {
-        ids = rank(pool).slice(0, size).map(q => q.id);
+        const ranked = rank(pool);
+        while (chosen.length < size && ranked.length) chosen.push(takeVaried(ranked, chosen));
       }
+      const ids = chosen.map(q => q.id);
       return Object.assign({}, section, { ids });
     }).filter(section => section.ids.length > 0);
   }
@@ -1172,6 +1269,7 @@
     pickExamQuestions,
     EXAM_PANEL,
     examPanelFor,
+    similarQuestions,
     inOralExam,
     buildExamPanel,
     gradeFromScore,
